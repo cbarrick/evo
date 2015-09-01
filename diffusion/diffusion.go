@@ -19,58 +19,64 @@ import (
 // Nodes
 // -------------------------
 
-// type vfpair combines a value (genome) and a fitness
-// so that the fitness need not be recomputed from the value
-type vfpair struct {
-	value   evo.Genome
-	fitness float64
-}
-
 type node struct {
 	// these need to be initially set
 	value evo.Genome
 	peers []*node
 
-	// the fitness of the current value is cached
-	// to avoid possibly expensive recomputation
-	fitness float64
-
 	// communication channels for the main loop
-	valuec   chan vfpair
-	closec   chan chan error
-	pausec   chan bool
+	valuec chan evo.Genome
+	closec chan chan error
 }
 
 func (n *node) init() {
-	n.valuec = make(chan vfpair)
+	n.valuec = make(chan evo.Genome)
 	n.closec = make(chan chan error)
-	n.pausec = make(chan bool)
 }
 
 func (n *node) loop() {
-	n.fitness = n.value.Fitness()
+	var (
+		globalErr error
+		suiters   = make([]evo.Genome, len(n.peers)>>1)
+		updates   = make(chan evo.Genome)
+	)
 
-	suiters := make([]evo.Genome, len(n.peers)>>1)
-	updates := make(chan evo.Genome)
+	setValue := func(val evo.Genome) {
+		if n.value != val {
+			err := n.value.Close()
+			if err != nil {
+				globalErr = err
+			}
+			n.value = val
+		}
+	}
+
 	update := func() {
 		perm := rand.Perm(len(suiters))
 		for i := range suiters {
-			suiters[i], _ = n.peers[perm[i]].Value()
+			suiters[i] = n.peers[perm[i]].Value()
 		}
 		updates <- n.value.Cross(suiters...)
 	}
 	go update()
 
-	var err error
 	for {
 		select {
-		case n.valuec <- vfpair{n.value, n.fitness}:
+		case n.valuec <- n.value:
 			break
+
+		case val := <-n.valuec:
+			setValue(val)
+
+		case child := <-updates:
+			setValue(child)
+			if globalErr == nil {
+				go update()
+			}
 
 		case ch := <-n.closec:
 			close(n.valuec)
 			close(n.closec)
-			close(n.pausec)
 
 			// if there is an update running in another goroutine
 			// then we must wait for it so that it closes cleanly
@@ -78,26 +84,8 @@ func (n *node) loop() {
 				<-updates
 			}
 
-			ch <- err
+			ch <- globalErr
 			return
-
-		case x := <-n.pausec:
-			n.pausec <- x
-			// the value may change while we are paused
-			// so we must update the fitness
-			n.fitness = n.value.Fitness()
-
-		case child := <-updates:
-			if n.value != child {
-				err = n.value.Close()
-				if err != nil {
-					updates = nil
-					break
-				}
-				n.value = child
-				n.fitness = child.Fitness()
-			}
-			go update()
 		}
 	}
 }
@@ -108,20 +96,30 @@ func (n *node) Close() error {
 	return <-errc
 }
 
-func (n *node) Value() (value evo.Genome, fitness float64) {
-	vf := <-n.valuec
-	if vf.value == nil {
-		return n.value, n.fitness
+func (n *node) Value() (value evo.Genome) {
+	value = <-n.valuec
+	if value == nil {
+		return n.value
 	}
-	return vf.value, vf.fitness
+	return value
 }
 
-func (n *node) pause() {
-	n.pausec <- true
-}
-
-func (n *node) resume() {
-	<-n.pausec
+func (n *node) Swap(m *node) {
+	nval := <-n.valuec
+	mval := <-m.valuec
+	switch {
+	case nval == nil && mval == nil:
+		n.value, m.value = m.value, n.value
+	case nval == nil:
+		m.valuec <- n.value
+		n.value = mval
+	case mval == nil:
+		n.valuec <- m.value
+		m.value = nval
+	default:
+		n.valuec <- mval
+		m.valuec <- nval
+	}
 }
 
 // Graphs
@@ -131,43 +129,12 @@ type graph struct {
 	nodes []node
 }
 
-func (g *graph) Stats() (s evo.Stats) {
-	var (
-		value     evo.Genome
-		fitness   float64
-		diversity float64
-		maxfit    = math.Inf(-1)
-		minfit    = math.Inf(+1)
-		count     int
-	)
-
-	s.Members = make([]evo.Genome, 0, len(g.nodes))
-	for i := range g.nodes {
-		value, fitness = g.nodes[i].Value()
-		if fitness > maxfit {
-			s.Max = value
-			maxfit = fitness
-		}
-		if fitness < minfit {
-			s.Min = value
-			minfit = fitness
-		}
-		for j := range s.Members {
-			diversity *= float64(count)
-			diversity += value.Difference(s.Members[j])
-			diversity /= float64(count + 1)
-			count++
-		}
-		s.Members = append(s.Members, value)
+func (g *graph) Members() (values []evo.Genome) {
+	values = make([]evo.Genome, len(g.nodes))
+	for i := range values {
+		values[i] = g.nodes[i].Value()
 	}
-
-	s.N = make(map[string]float64, 4)
-	s.N["maxfit"] = maxfit
-	s.N["minfit"] = minfit
-	s.N["diversity"] = diversity
-	s.N["convergence"] = maxfit - minfit
-
-	return s
+	return values
 }
 
 func (g *graph) Close() (err error) {
@@ -181,31 +148,21 @@ func (g *graph) Close() (err error) {
 }
 
 func (g *graph) Fitness() float64 {
-	return g.Stats().N["maxfit"]
+	return evo.Max(g.Members()...).Fitness()
 }
 
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
 	i := rand.Intn(len(suiters))
-	us := g.MaxNode()
-	them := suiters[i].(*graph).MaxNode()
-	us.pause()
-	them.pause()
-	us.value, them.value = them.value, us.value
-	us.resume()
-	them.resume()
+	n := g.MaxNode()
+	m := suiters[i].(*graph).MaxNode()
+	n.Swap(m)
 	return g
-}
-
-func (g *graph) Difference(other evo.Genome) float64 {
-	us := g.Stats().Max
-	them := other.(evo.Population).Stats().Max
-	return us.Difference(them)
 }
 
 func (g *graph) MaxNode() (best *node) {
 	fitness := math.Inf(-1)
 	for i := range g.nodes {
-		_, newfitness := g.nodes[i].Value()
+		newfitness := g.nodes[i].Value().Fitness()
 		if newfitness > fitness {
 			fitness = newfitness
 			best = &g.nodes[i]

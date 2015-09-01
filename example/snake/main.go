@@ -100,7 +100,7 @@ func (s *snake) Fitness() float64 {
 // A random edge of the child is mutated by a normally distributed random value.
 func (mom *snake) Cross(suiters ...evo.Genome) evo.Genome {
 	perm := rand.Perm(len(suiters))
-	dad := evo.Tournament(suiters[perm[0]], suiters[perm[1]]).(*snake)
+	dad := evo.Max(suiters[perm[0]], suiters[perm[1]]).(*snake)
 
 	split := rand.Intn(len(mom.edges))
 	child := new(snake)
@@ -120,18 +120,6 @@ func (mom *snake) Cross(suiters ...evo.Genome) evo.Genome {
 	} else {
 		return mom
 	}
-}
-
-// Difference returns the percent difference between the edge-lists of two snakes.
-func (s *snake) Difference(other evo.Genome) (score float64) {
-	edges := other.(*snake).edges
-	for i := range edges {
-		if edges[i] != s.edges[i] {
-			score++
-		}
-	}
-	score /= float64(len(edges))
-	return score
 }
 
 // Close simply returns nil. Snakes do not control any closeable resources.
@@ -157,11 +145,12 @@ func Random(dim uint) evo.Genome {
 // main runs a diffusion-population genetic algorithm to search for large snakes
 // of dimension 6. The largest snake is known to be 26 edges long.
 func main() {
-	size := 128    // controls the size of the population
-	dim := uint(6) // sets the dimension of the cube in which we search
-	fmt.Printf("snake-in-the-box: dimension=%d population-size=%d\n", dim, size)
+	var (
+		size = 128
+		dim  = uint(6)
+	)
 
-	var stats evo.Stats
+	fmt.Printf("snake-in-the-box: dimension=%d population-size=%d\n", dim, size)
 
 	// Create an initial random population
 	snakes := make([]evo.Genome, size)
@@ -173,11 +162,10 @@ func main() {
 	// update prints a status line to the terminal
 	// the string "\x1b[2K" is the escape code to clear the line
 	update := func() {
-		stats = population.Stats()
-		fmt.Printf("\x1b[2K\rMax: %f | Min: %f | Diversity: %f",
-			stats.N["maxfit"],
-			stats.N["minfit"],
-			stats.N["diversity"])
+		members := population.Members()
+		max := evo.Max(members...).Fitness()
+		min := evo.Min(members...).Fitness()
+		fmt.Printf("\x1b[2K\rMax: %f | Min: %f", max, min)
 	}
 
 	// Stop after 5 seconds
@@ -197,6 +185,6 @@ func main() {
 
 	// Print the final population
 	fmt.Println("Solution:")
-	fmt.Println(stats.Max)
+	fmt.Println(evo.Max(population.Members()...))
 	fmt.Println()
 }

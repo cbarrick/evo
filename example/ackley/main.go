@@ -37,7 +37,7 @@ func (ack *ackley) Fitness() (f float64) {
 
 func (mom *ackley) Cross(suiters ...evo.Genome) evo.Genome {
 	perm := rand.Perm(len(suiters))
-	dad := evo.Tournament(suiters[perm[0]], suiters[perm[1]]).(*ackley)
+	dad := evo.Max(suiters[perm[0]], suiters[perm[1]]).(*ackley)
 
 	split := rand.Intn(len(mom.gene))
 	child := new(ackley)
@@ -55,16 +55,6 @@ func (mom *ackley) Cross(suiters ...evo.Genome) evo.Genome {
 	}
 }
 
-func (ack *ackley) Difference(other evo.Genome) (score float64) {
-	for i := range ack.gene {
-		if ack.gene[i] != other.(*ackley).gene[i] {
-			score++
-		}
-	}
-	score /= float64(len(ack.gene))
-	return score
-}
-
 func (_ *ackley) Close() error {
 	return nil
 }
@@ -79,12 +69,15 @@ func Random(dim int) (ack *ackley) {
 }
 
 func main() {
-	size := 32
-	dim := 16
-	accuracy := 0.001
-	fmt.Printf("ackley: dimension=%d population=%d accuracy=%g\n", dim, size, accuracy)
+	var (
+		size     = 32
+		dim      = 16
+		accuracy = 0.001
+		convergence float64
+	)
 
-	var stats evo.Stats
+
+	fmt.Printf("ackley: dimension=%d population=%d accuracy=%g\n", dim, size, accuracy)
 
 	// random initial population
 	// each gene is in the range [-32.768, +32.768).
@@ -94,20 +87,21 @@ func main() {
 	}
 	population := diffusion.Hypercube(acks)
 
-	// update prints a status line to the terminal
+	// update sets the convergence variable
+	// and prints a status line to the terminal
 	// the string "\x1b[2K" is the escape code to clear the line
 	update := func() {
-		stats = population.Stats()
-		fmt.Printf("\x1b[2K\rMax: %f | Min: %f | Diversity: %f",
-			stats.N["maxfit"],
-			stats.N["minfit"],
-			stats.N["diversity"])
+		members := population.Members()
+		max := evo.Max(members...).Fitness()
+		min := evo.Min(members...).Fitness()
+		convergence = max - min
+		fmt.Printf("\x1b[2K\rMax: %f | Min: %f | Conv: %f", max, min, convergence)
 	}
 
 	// the global maximum fitness is known to be 0 when all variables are 0
 	// run the GA until the population converges to the given degree of accuracy
 	update()
-	for stats.N["convergence"] > accuracy {
+	for convergence > accuracy {
 		update()
 	}
 	population.Close()
@@ -116,6 +110,6 @@ func main() {
 
 	// print the final population
 	fmt.Println("Solution:")
-	fmt.Println(stats.Max)
+	fmt.Println(evo.Max(population.Members()...))
 	fmt.Println()
 }
