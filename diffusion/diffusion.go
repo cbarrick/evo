@@ -36,20 +36,9 @@ func (n *node) init() {
 
 func (n *node) loop() {
 	var (
-		globalErr error
 		suiters   = make([]evo.Genome, len(n.peers)>>1)
 		updates   = make(chan evo.Genome)
 	)
-
-	setValue := func(val evo.Genome) {
-		if n.value != val {
-			err := n.value.Close()
-			if err != nil {
-				globalErr = err
-			}
-			n.value = val
-		}
-	}
 
 	update := func() {
 		perm := rand.Perm(len(suiters))
@@ -66,13 +55,11 @@ func (n *node) loop() {
 			break
 
 		case val := <-n.valuec:
-			setValue(val)
+			n.value = val
 
 		case child := <-updates:
-			setValue(child)
-			if globalErr == nil {
-				go update()
-			}
+			n.value = child
+			go update()
 
 		case ch := <-n.closec:
 			close(n.valuec)
@@ -84,7 +71,7 @@ func (n *node) loop() {
 				<-updates
 			}
 
-			ch <- globalErr
+			ch <- n.value.Close()
 			return
 		}
 	}
