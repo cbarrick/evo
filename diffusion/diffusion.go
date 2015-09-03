@@ -35,18 +35,26 @@ func (n *node) init() {
 
 func (n *node) loop() {
 	var (
-		suiters   = make([]evo.Genome, len(n.peers)>>1)
-		updates   = make(chan evo.Genome)
+		// Used as temporary storage by the mating loop
+		suiters = make([]evo.Genome, len(n.peers)>>1)
+
+		// Channel on which the mating loop communicates
+		updates = make(chan evo.Genome)
+
+		// This flag is set when the value within the loop has been recently
+		// overridden. It causes the current mating loop (which may be using
+		// the old value) to be ignored.
+		manualOverride bool
 	)
 
-	update := func() {
+	mate := func(value evo.Genome) {
 		perm := rand.Perm(len(suiters))
 		for i := range suiters {
 			suiters[i] = n.peers[perm[i]].Value()
 		}
-		updates <- n.value.Cross(suiters...)
+		updates <- value.Cross(suiters...)
 	}
-	go update()
+	go mate(n.value)
 
 	for {
 		select {
@@ -55,19 +63,23 @@ func (n *node) loop() {
 
 		case val := <-n.valuec:
 			n.value = val
+			manualOverride = true
 
 		case child := <-updates:
-			n.value = child
-			go update()
+			if !manualOverride {
+				n.value = child
+			}
+			manualOverride = false
+			go mate(n.value)
 
 		case ch := <-n.closec:
 			close(n.valuec)
 			close(n.closec)
 
-			// if there is an update running in another goroutine
-			// then we must wait for it so that it closes cleanly
+			// if there is a mating loop running
+			// then we must wait for it to close cleanly
 			if updates != nil {
-				<-updates
+				n.value = <-updates
 			}
 
 			ch <- n.value.Close()
