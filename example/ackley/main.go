@@ -70,12 +70,11 @@ func Random(dim int) (ack *ackley) {
 
 func main() {
 	var (
-		size     = 32
-		dim      = 16
-		accuracy = 0.001
+		size        = 32
+		dim         = 16
+		accuracy    = 0.001
 		convergence float64
 	)
-
 
 	fmt.Printf("ackley: dimension=%d population=%d accuracy=%g\n", dim, size, accuracy)
 
