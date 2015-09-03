@@ -150,7 +150,11 @@ func (g *graph) Fitness() float64 {
 }
 
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
-	// TODO
+	h := suiters[rand.Intn(len(suiters))].(*graph)
+	gmax := g.Max()
+	hmax := h.Max()
+	g.nodes[rand.Intn(len(g.nodes))].valuec <- hmax
+	h.nodes[rand.Intn(len(h.nodes))].valuec <- gmax
 	return g
 }
 
