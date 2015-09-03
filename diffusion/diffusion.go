@@ -35,18 +35,40 @@ func (n *node) init() {
 
 func (n *node) loop() {
 	var (
-		// Used as temporary storage by the mating loop
+		// Used as temporary storage by the mating routine
 		suiters = make([]evo.Genome, len(n.peers)>>1)
 
-		// Channel on which the mating loop communicates
+		// Channel on which the mating routine communicates
 		updates = make(chan evo.Genome)
 
-		// This flag is set when the value within the loop has been recently
-		// overridden. It causes the current mating loop (which may be using
+		// This flag is set when the value within the node has been recently
+		// overridden. It causes the current mating routine (which will be using
 		// the old value) to be ignored.
 		manualOverride bool
+
+		// Set whenever an error is encountered
+		err error
 	)
 
+	// set sets the underlying value of the node. If it is different from the
+	// existing value, the old value is closed. If an error occurs, err is set
+	// to the error.
+	set := func(newval evo.Genome) {
+		var err_ error
+		if n.value != newval {
+			err_ = n.value.Close()
+			n.value = newval
+		}
+		if err_ != nil {
+			err = err_
+		}
+	}
+
+	// mate calls the Cross method of the underlying value of the node,
+	// presenting a subset of the adjacent values as suiters. The size of the
+	// subset is determined by the length of the suiters slice. The result of
+	// the cross is returned over the updates channel. This function should be
+	// called as a goroutine.
 	mate := func(value evo.Genome) {
 		perm := rand.Perm(len(suiters))
 		for i := range suiters {
@@ -62,27 +84,31 @@ func (n *node) loop() {
 			break
 
 		case val := <-n.valuec:
-			n.value = val
+			set(val)
 			manualOverride = true
 
 		case child := <-updates:
 			if !manualOverride {
-				n.value = child
+				set(child)
 			}
 			manualOverride = false
-			go mate(n.value)
+			if err == nil {
+				go mate(n.value)
+			} else {
+				updates = nil
+			}
 
 		case ch := <-n.closec:
 			close(n.valuec)
 			close(n.closec)
-
-			// if there is a mating loop running
-			// then we must wait for it to close cleanly
 			if updates != nil {
 				n.value = <-updates
 			}
-
-			ch <- n.value.Close()
+			err_ := n.value.Close()
+			if err_ != nil {
+				err = err_
+			}
+			ch <- err
 			return
 		}
 	}
@@ -100,24 +126,6 @@ func (n *node) Value() (value evo.Genome) {
 		return n.value
 	}
 	return value
-}
-
-func (n *node) Swap(m *node) {
-	nval := <-n.valuec
-	mval := <-m.valuec
-	switch {
-	case nval == nil && mval == nil:
-		n.value, m.value = m.value, n.value
-	case nval == nil:
-		m.valuec <- n.value
-		n.value = mval
-	case mval == nil:
-		n.valuec <- m.value
-		m.value = nval
-	default:
-		n.valuec <- mval
-		m.valuec <- nval
-	}
 }
 
 // Graphs
