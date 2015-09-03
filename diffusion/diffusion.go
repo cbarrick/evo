@@ -9,7 +9,6 @@
 package diffusion
 
 import (
-	"math"
 	"math/rand"
 	"strconv"
 
@@ -116,8 +115,8 @@ type graph struct {
 	nodes []node
 }
 
-func (g *graph) Members() (values []evo.Genome) {
-	values = make([]evo.Genome, len(g.nodes))
+func (g *graph) View() (values evo.View) {
+	values = make(evo.View, len(g.nodes))
 	for i := range values {
 		values[i] = g.nodes[i].Value()
 	}
@@ -135,27 +134,20 @@ func (g *graph) Close() (err error) {
 }
 
 func (g *graph) Fitness() float64 {
-	return evo.Max(g.Members()...).Fitness()
+	return g.Max().Fitness()
 }
 
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
-	i := rand.Intn(len(suiters))
-	n := g.MaxNode()
-	m := suiters[i].(*graph).MaxNode()
-	n.Swap(m)
+	// TODO
 	return g
 }
 
-func (g *graph) MaxNode() (best *node) {
-	fitness := math.Inf(-1)
-	for i := range g.nodes {
-		newfitness := g.nodes[i].Value().Fitness()
-		if newfitness > fitness {
-			fitness = newfitness
-			best = &g.nodes[i]
-		}
-	}
-	return best
+func (g *graph) Max() evo.Genome {
+	return g.View().Max()
+}
+
+func (g *graph) Min() evo.Genome {
+	return g.View().Min()
 }
 
 // Functions

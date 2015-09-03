@@ -9,30 +9,20 @@ type Genome interface {
 
 type Population interface {
 	Genome
-	Members() []Genome
+	View() View
+	Max() Genome
+	Min() Genome
 }
 
 // Functions
 // -------------------------
 
-// Max returns the genome with the highest fitness.
-func Max(gs ...Genome) (max Genome) {
-	max = gs[0]
-	for i := range gs {
-		if gs[i].Fitness() > max.Fitness() {
-			max = gs[i]
+func Tournament(suiters ...Genome) (max Genome) {
+	max = suiters[0]
+	for i := range suiters {
+		if suiters[i].Fitness() > max.Fitness() {
+			max = suiters[i]
 		}
 	}
 	return max
-}
-
-// Min returns the genome with the lowest fitness.
-func Min(gs ...Genome) (min Genome) {
-	min = gs[0]
-	for i := range gs {
-		if gs[i].Fitness() < min.Fitness() {
-			min = gs[i]
-		}
-	}
-	return min
 }

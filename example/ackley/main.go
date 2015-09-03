@@ -37,7 +37,7 @@ func (ack *ackley) Fitness() (f float64) {
 
 func (mom *ackley) Cross(suiters ...evo.Genome) evo.Genome {
 	perm := rand.Perm(len(suiters))
-	dad := evo.Max(suiters[perm[0]], suiters[perm[1]]).(*ackley)
+	dad := evo.Tournament(suiters[perm[0]], suiters[perm[1]]).(*ackley)
 
 	split := rand.Intn(len(mom.gene))
 	child := new(ackley)
@@ -91,9 +91,8 @@ func main() {
 	// and prints a status line to the terminal
 	// the string "\x1b[2K" is the escape code to clear the line
 	update := func() {
-		members := population.Members()
-		max := evo.Max(members...).Fitness()
-		min := evo.Min(members...).Fitness()
+		max := population.Max().Fitness()
+		min := population.Min().Fitness()
 		convergence = max - min
 		fmt.Printf("\x1b[2K\rMax: %f | Min: %f | Conv: %f", max, min, convergence)
 	}
@@ -110,6 +109,6 @@ func main() {
 
 	// print the final population
 	fmt.Println("Solution:")
-	fmt.Println(evo.Max(population.Members()...))
+	fmt.Println(population.Max())
 	fmt.Println()
 }
