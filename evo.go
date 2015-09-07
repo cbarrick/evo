@@ -10,8 +10,6 @@ type Genome interface {
 type Population interface {
 	Genome
 	View() View
-	Max() Genome
-	Min() Genome
 }
 
 // Functions

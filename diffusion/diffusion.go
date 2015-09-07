@@ -36,7 +36,7 @@ func (n *node) init() {
 func (n *node) loop() {
 	var (
 		// Used as temporary storage by the mating routine
-		suiters = make([]evo.Genome, len(n.peers)>>1)
+		suiters = make([]evo.Genome, len(n.peers)/2+1)
 
 		// Channel on which the mating routine communicates
 		updates = make(chan evo.Genome)
@@ -135,12 +135,12 @@ type graph struct {
 	nodes []node
 }
 
-func (g *graph) View() (values evo.View) {
-	values = make(evo.View, len(g.nodes))
-	for i := range values {
-		values[i] = g.nodes[i].Value()
+func (g *graph) View() evo.View {
+	members := make([]evo.Genome, len(g.nodes))
+	for i := range members {
+		members[i] = g.nodes[i].Value()
 	}
-	return values
+	return evo.NewView(members...)
 }
 
 func (g *graph) Close() (err error) {
@@ -153,25 +153,24 @@ func (g *graph) Close() (err error) {
 	return err
 }
 
-func (g *graph) Fitness() float64 {
-	return g.Max().Fitness()
+func (g *graph) Fitness() (f float64) {
+	v := g.View()
+	f = v.Max().Fitness()
+	v.Close()
+	return f
 }
 
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
 	h := suiters[rand.Intn(len(suiters))].(*graph)
-	gmax := g.Max()
-	hmax := h.Max()
+	gview := g.View()
+	hview := h.View()
+	gmax := gview.Max()
+	hmax := hview.Max()
+	gview.Close()
+	hview.Close()
 	g.nodes[rand.Intn(len(g.nodes))].valuec <- hmax
 	h.nodes[rand.Intn(len(h.nodes))].valuec <- gmax
 	return g
-}
-
-func (g *graph) Max() evo.Genome {
-	return g.View().Max()
-}
-
-func (g *graph) Min() evo.Genome {
-	return g.View().Min()
 }
 
 // Functions
@@ -184,7 +183,7 @@ func New(values []evo.Genome) evo.Population {
 
 // Grid creates a new diffusion population arranged in a 2D grid.
 func Grid(values []evo.Genome) evo.Population {
-	offset := len(values) >> 1
+	offset := len(values) / 2
 	topology := make([][]int, len(values))
 	for i := range values {
 		topology[i] = make([]int, 4)

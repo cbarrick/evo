@@ -70,10 +70,10 @@ func Random(dim int) (ack *ackley) {
 
 func main() {
 	var (
-		size        = 32
-		dim         = 16
-		accuracy    = 0.001
-		convergence float64
+		size      = 32
+		dim       = 16
+		accuracy  = 0.001
+		deviation float64
 	)
 
 	fmt.Printf("ackley: dimension=%d population=%d accuracy=%g\n", dim, size, accuracy)
@@ -86,20 +86,19 @@ func main() {
 	}
 	population := diffusion.Hypercube(acks)
 
-	// update sets the convergence variable
-	// and prints a status line to the terminal
+	// update sets the deviation variable and prints a summary to the terminal
 	// the string "\x1b[2K" is the escape code to clear the line
 	update := func() {
-		max := population.Max().Fitness()
-		min := population.Min().Fitness()
-		convergence = max - min
-		fmt.Printf("\x1b[2K\rMax: %f | Min: %f | Conv: %f", max, min, convergence)
+		view := population.View()
+		deviation = view.StdDeviation()
+		fmt.Printf("\x1b[2K\r%v", view)
+		view.Close()
 	}
 
 	// the global maximum fitness is known to be 0 when all variables are 0
 	// run the GA until the population converges to the given degree of accuracy
 	update()
-	for convergence > accuracy {
+	for deviation > accuracy {
 		update()
 	}
 	population.Close()
@@ -108,6 +107,8 @@ func main() {
 
 	// print the final population
 	fmt.Println("Solution:")
-	fmt.Println(population.Max())
+	view := population.View()
+	fmt.Println(view.Max())
+	view.Close()
 	fmt.Println()
 }
