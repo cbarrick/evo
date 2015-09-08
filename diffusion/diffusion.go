@@ -36,7 +36,7 @@ func (n *node) init() {
 func (n *node) loop() {
 	var (
 		// Used as temporary storage by the mating routine
-		suiters = make([]evo.Genome, len(n.peers)/2+1)
+		suiters = make([]evo.Genome, len(n.peers))
 
 		// Channel on which the mating routine communicates
 		updates = make(chan evo.Genome)
@@ -70,9 +70,8 @@ func (n *node) loop() {
 	// the cross is returned over the updates channel. This function should be
 	// called as a goroutine.
 	mate := func(value evo.Genome) {
-		perm := rand.Perm(len(suiters))
 		for i := range suiters {
-			suiters[i] = n.peers[perm[i]].Value()
+			suiters[i] = n.peers[i].Value()
 		}
 		updates <- value.Cross(suiters...)
 	}
@@ -161,16 +160,30 @@ func (g *graph) Fitness() (f float64) {
 }
 
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
-	h := suiters[rand.Intn(len(suiters))].(*graph)
-	gview := g.View()
-	hview := h.View()
-	gmax := gview.Max()
-	hmax := hview.Max()
-	gview.Close()
-	hview.Close()
-	g.nodes[rand.Intn(len(g.nodes))].valuec <- hmax
-	h.nodes[rand.Intn(len(h.nodes))].valuec <- gmax
+	// pick a mate, try not to mate with self
+	i := rand.Intn(len(suiters))
+	h := suiters[i].(*graph)
+	if h == g {
+		if len(suiters) > 1 {
+			// remove conflict and try again
+			newsuiters := make([]evo.Genome, len(suiters)-1)
+			copy(newsuiters[0:], suiters[:i])
+			copy(newsuiters[i:], suiters[i+1:])
+			return g.Cross(newsuiters...)
+		}
+		return g // our only option is to mate with self
+	}
+
+	// mate by setting a random node in g with the best node in h
+	g.nodes[rand.Intn(len(g.nodes))].valuec <- h.Max()
 	return g
+}
+
+func (g *graph) Max() (max evo.Genome) {
+	v := g.View()
+	max = v.Max()
+	v.Close()
+	return max
 }
 
 // Functions
