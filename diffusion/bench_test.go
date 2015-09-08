@@ -1,7 +1,6 @@
 package diffusion_test
 
 import (
-	"math"
 	"testing"
 
 	"github.com/cbarrick/evo"
@@ -10,10 +9,12 @@ import (
 )
 
 func BenchmarkAckley(b *testing.B) {
-	size := 32
-	dim := 16
-	accuracy := 0.001
-	convergence := math.Inf(+1)
+	var (
+		size      = 32
+		dim       = 16
+		accuracy  = 0.0001
+		deviation float64
+	)
 
 	acks := make([]evo.Genome, size)
 	for i := range acks {
@@ -21,13 +22,15 @@ func BenchmarkAckley(b *testing.B) {
 	}
 	population := diffusion.Hypercube(acks)
 
-	b.ResetTimer()
-	for convergence > accuracy {
-		members := population.Members()
-		max := evo.Max(members...).Fitness()
-		min := evo.Min(members...).Fitness()
-		convergence = max - min
+	update := func() {
+		view := population.View()
+		deviation = view.StdDeviation()
+		view.Close()
+	}
+
+	update()
+	for deviation > accuracy {
+		update()
 	}
 	population.Close()
-	b.StopTimer()
 }
