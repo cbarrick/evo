@@ -1,11 +1,11 @@
 // Package diffusion implements a fine-grained parallel genetic algorithm.
 //
 // A diffusion population maps each genome to a node in a connected graph. Each
-// node manages the lifecycle of exactly one genome at a time. For each
-// iteration, a node calls the `Cross` method of its underlying genome, passing
-// a subset of the adjacent genomes as arguments. The underlying genome is
-// replaced by the result of that call. All nodes run concurrently on separate
-// goroutines.
+// node manages one slot of the population. For each iteration, a node calls the
+// `Cross` method of its underlying genome, passing the adjacent genomes as the
+// mating pool. The underlying genome is replaced by the result of that call.
+// In this way, good genes diffuse through the population over many iterations.
+// Each node manages its lifecycle in parallel.
 package diffusion
 
 import (
@@ -18,19 +18,26 @@ import (
 // Nodes
 // -------------------------
 
+// Nodes wrap a genome and are aggregated to form a graph of genomes.
+// A node manages the lifecycle of one slot in a population concurrently with
+// all other nodes in the graph. The underlying genome is only allowed to mate
+// with genomes from adjacent nodes.
 type node struct {
-	// these need to be initially set
-	value evo.Genome
-	peers []*node
-
-	// communication channels for the main loop
+	value  evo.Genome
+	peers  []*node
 	valuec chan evo.Genome
 	closec chan chan error
 }
 
+// Init must be called on each node before any node is started.
 func (n *node) init() {
 	n.valuec = make(chan evo.Genome)
 	n.closec = make(chan chan error)
+}
+
+// Start spins up the main goroutine.
+func (n *node) Start() {
+	go n.loop()
 }
 
 func (n *node) loop() {
@@ -64,11 +71,10 @@ func (n *node) loop() {
 		}
 	}
 
-	// mate calls the Cross method of the underlying value of the node,
-	// presenting a subset of the adjacent values as suiters. The size of the
-	// subset is determined by the length of the suiters slice. The result of
-	// the cross is returned over the updates channel. This function should be
-	// called as a goroutine.
+	// mate calls the Cross method of the underlying genome of the node,
+	// presenting the adjacent genomes as suiters. The result of the cross is
+	// returned over the updates channel. Exactly one instance of this function
+	// is running as a goroutine as long as the node is alive.
 	mate := func(value evo.Genome) {
 		for i := range suiters {
 			suiters[i] = n.peers[i].Value()
@@ -79,24 +85,26 @@ func (n *node) loop() {
 
 	for {
 		select {
-		case n.valuec <- n.value:
-			break
 
+		// get and set the underlying genome
+		case n.valuec <- n.value:
 		case val := <-n.valuec:
 			set(val)
 			manualOverride = true
 
+		// update the underlying genome whenever the mating routine returns
 		case child := <-updates:
 			if !manualOverride {
 				set(child)
 			}
 			manualOverride = false
-			if err == nil {
-				go mate(n.value)
-			} else {
+			if err != nil {
 				updates = nil
+			} else {
+				go mate(n.value)
 			}
 
+		// cleanup by closing channels and waiting on the last mating routine
 		case ch := <-n.closec:
 			close(n.valuec)
 			close(n.closec)
@@ -113,12 +121,14 @@ func (n *node) loop() {
 	}
 }
 
+// Close stops the main goroutine
 func (n *node) Close() error {
 	errc := make(chan error)
 	n.closec <- errc
 	return <-errc
 }
 
+// Value returns the current underlying value.
 func (n *node) Value() (value evo.Genome) {
 	value = <-n.valuec
 	if value == nil {
@@ -130,10 +140,12 @@ func (n *node) Value() (value evo.Genome) {
 // Graphs
 // -------------------------
 
+// Graphs aggregate nodes into a population.
 type graph struct {
 	nodes []node
 }
 
+// View constructs a view of genomes in the graph..
 func (g *graph) View() evo.View {
 	members := make([]evo.Genome, len(g.nodes))
 	for i := range members {
@@ -142,6 +154,7 @@ func (g *graph) View() evo.View {
 	return evo.NewView(members...)
 }
 
+// Close stops the goroutines of all nodes.
 func (g *graph) Close() (err error) {
 	for i := range g.nodes {
 		err_i := g.nodes[i].Close()
@@ -152,6 +165,7 @@ func (g *graph) Close() (err error) {
 	return err
 }
 
+// Fitness returns the maximum fitness within the graph.
 func (g *graph) Fitness() (f float64) {
 	v := g.View()
 	f = v.Max().Fitness()
@@ -159,6 +173,7 @@ func (g *graph) Fitness() (f float64) {
 	return f
 }
 
+// Cross injects the best genome of the suiter into a random node in the graph.
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
 	// pick a mate, try not to mate with self
 	i := rand.Intn(len(suiters))
@@ -179,6 +194,7 @@ func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
 	return g
 }
 
+// Max returns the best genome in the population.
 func (g *graph) Max() (max evo.Genome) {
 	v := g.View()
 	max = v.Max()
@@ -189,7 +205,8 @@ func (g *graph) Max() (max evo.Genome) {
 // Functions
 // -------------------------
 
-// New creates a new diffusion population with the default topology.
+// New creates a new diffusion population with a layout chosen by the system.
+// Currently, the hypercube layout is always used.
 func New(values []evo.Genome) evo.Population {
 	return Hypercube(values)
 }
@@ -197,15 +214,15 @@ func New(values []evo.Genome) evo.Population {
 // Grid creates a new diffusion population arranged in a 2D grid.
 func Grid(values []evo.Genome) evo.Population {
 	offset := len(values) / 2
-	topology := make([][]int, len(values))
+	layout := make([][]int, len(values))
 	for i := range values {
-		topology[i] = make([]int, 4)
-		topology[i][0] = ((i + 1) + len(values)) % len(values)
-		topology[i][1] = ((i - 1) + len(values)) % len(values)
-		topology[i][2] = ((i + offset) + len(values)) % len(values)
-		topology[i][3] = ((i - offset) + len(values)) % len(values)
+		layout[i] = make([]int, 4)
+		layout[i][0] = ((i + 1) + len(values)) % len(values)
+		layout[i][1] = ((i - 1) + len(values)) % len(values)
+		layout[i][2] = ((i + offset) + len(values)) % len(values)
+		layout[i][3] = ((i - offset) + len(values)) % len(values)
 	}
-	return Custom(topology, values)
+	return Custom(layout, values)
 }
 
 // Hypercube creates a new diffusion population arranged in a hypercube graph.
@@ -213,42 +230,42 @@ func Hypercube(values []evo.Genome) evo.Population {
 	var dimension uint
 	for dimension = 0; len(values) > (1 << dimension); dimension++ {
 	}
-	topology := make([][]int, len(values))
+	layout := make([][]int, len(values))
 	for i := range values {
-		topology[i] = make([]int, dimension)
-		for j := range topology[i] {
-			topology[i][j] = (i ^ (1 << uint(j))) % len(values)
+		layout[i] = make([]int, dimension)
+		for j := range layout[i] {
+			layout[i][j] = (i ^ (1 << uint(j))) % len(values)
 		}
 	}
-	return Custom(topology, values)
+	return Custom(layout, values)
 }
 
 // Ring creates a new diffusion population arranged in a ring.
 func Ring(values []evo.Genome) evo.Population {
-	topology := make([][]int, len(values))
+	layout := make([][]int, len(values))
 	for i := range values {
-		topology[i] = make([]int, 2)
-		topology[i][0] = (i - 1 + len(values)) % len(values)
-		topology[i][0] = (i + 1) % len(values)
+		layout[i] = make([]int, 2)
+		layout[i][0] = (i - 1 + len(values)) % len(values)
+		layout[i][0] = (i + 1) % len(values)
 	}
-	return Custom(topology, values)
+	return Custom(layout, values)
 }
 
-// Custom creates a new diffusion population with a custom topology.
-// The topology maps each node to the list of its peers, e.g. if
-// `topology[0] == [1,2,3]` then the 0th node will have three peers,
-// namely the 1st, 2nd, and 3rd nodes.
-func Custom(topology [][]int, values []evo.Genome) evo.Population {
+// Custom creates a new diffusion population with a custom layout.
+// The layout is specified as an adjacency list in terms of position, e.g. if
+// `layout[0] == [1,2,3]` then the 0th node will have three peers, namely the
+// 1st, 2nd, and 3rd nodes.
+func Custom(layout [][]int, values []evo.Genome) evo.Population {
 
-	// validate the topology
+	// validate the layout
 	size := len(values)
-	if len(topology) != size {
-		panic("invalid topology, len(topology) != len(values)")
+	if len(layout) != size {
+		panic("invalid layout, len(layout) != len(values)")
 	}
-	for i := range topology {
-		for j := range topology[i] {
-			if topology[i][j] >= size {
-				panic("invalid topology, no such node: " + strconv.Itoa(topology[i][j]))
+	for i := range layout {
+		for j := range layout[i] {
+			if layout[i][j] >= size {
+				panic("invalid layout, no such node: " + strconv.Itoa(layout[i][j]))
 			}
 		}
 	}
@@ -262,8 +279,8 @@ func Custom(topology [][]int, values []evo.Genome) evo.Population {
 	for i := range g.nodes {
 		n := &g.nodes[i]
 		n.value = values[i]
-		n.peers = make([]*node, len(topology[i]))
-		for j := range topology[i] {
+		n.peers = make([]*node, len(layout[i]))
+		for j := range layout[i] {
 			n.peers[j] = &g.nodes[j]
 		}
 		n.init()
@@ -271,7 +288,7 @@ func Custom(topology [][]int, values []evo.Genome) evo.Population {
 
 	// start each node's main loop
 	for i := range g.nodes {
-		go g.nodes[i].loop()
+		g.nodes[i].Start()
 	}
 
 	return g
