@@ -3,7 +3,17 @@ package evo
 import (
 	"fmt"
 	"math"
+	"sync"
 )
+
+// Views are cached for reuse in this pool.
+// Reusing views reduces the chance that a new genome slice is allocated.
+var pool = sync.Pool{
+	New: func() interface{} {
+		var v View
+		return v
+	},
+}
 
 // Views are static collections of genomes. The usual way to obtain a view is
 // by calling the View() method of a population; the collection returned is a
@@ -15,8 +25,8 @@ import (
 // statistics on a population is to create a view.
 type View struct {
 	members  []Genome
-	max, min Genome
-	mean     float64
+	max, min int     // indexes of the max/min genomes
+	mean     float64 // average fitness of all members
 	m2       float64 // sum of squares of deviation from the mean
 	len      float64 // len(v.members) as a float64
 }
@@ -27,14 +37,15 @@ type View struct {
 // `myPopulation.View()`
 func NewView(subs ...Genome) View {
 	var (
-		v      View
+		v      = pool.Get().(View)
 		maxfit = math.Inf(-1)
 		minfit = math.Inf(+1)
 	)
 
-	// We estimate the size of the view to be len(subs)
-	// This assumption only holds when all arguments are non-populations
-	v.members = make([]Genome, 0, len(subs))
+	// The size of the view will be at least len(subs).
+	if cap(v.members) < len(subs) {
+		v.members = make([]Genome, 0, len(subs))
+	}
 
 	// We calculate the mean and variance during construction so that calls to
 	// the statistics methods take constant time. For each argument passed, we
@@ -62,16 +73,16 @@ func NewView(subs ...Genome) View {
 			newlen := subview.len + v.len
 
 			// max
-			submaxfit := subview.max.Fitness()
+			submaxfit := subview.Max().Fitness()
 			if submaxfit > maxfit {
-				v.max = subview.max
+				v.max = len(v.members) + subview.max
 				maxfit = submaxfit
 			}
 
 			// min
-			subminfit := subview.min.Fitness()
+			subminfit := subview.Min().Fitness()
 			if subminfit < minfit {
-				v.min = subview.min
+				v.min = len(v.members) + subview.min
 				minfit = subminfit
 			}
 
@@ -86,6 +97,8 @@ func NewView(subs ...Genome) View {
 			v.len = newlen
 			v.members = append(v.members, subview.members...)
 
+			subview.Close()
+
 		default:
 			subfit := sub.Fitness()
 			delta := subfit - v.mean
@@ -93,13 +106,13 @@ func NewView(subs ...Genome) View {
 
 			// max
 			if subfit > maxfit {
-				v.max = sub
+				v.max = len(v.members)
 				maxfit = subfit
 			}
 
 			// min
 			if subfit < minfit {
-				v.min = sub
+				v.min = len(v.members)
 				minfit = subfit
 			}
 
@@ -118,13 +131,13 @@ func NewView(subs ...Genome) View {
 	return v
 }
 
-// Close releases resources used by the view. Currently, this method does
-// nothing and always returns nil. Future optimizations may be implemented to
-// reduce the allocation cost of repeatedly creating views (e.g. when gathering
-// statistics as part of a termination condition). These optimizations will
-// require the view to close itself. Always close your views.
-func (v View) Close() error {
-	return nil
+// Close releases your control of the view.
+// Using a view after closing is not safe.
+func (v View) Close() {
+	v.members = v.members[0:0]
+	v.max, v.min = 0, 0
+	v.mean, v.m2, v.len = 0, 0, 0
+	pool.Put(v)
 }
 
 // Members returns the genomes in the view.
@@ -134,17 +147,17 @@ func (v View) Members() []Genome {
 
 // Max returns the genome with the best fitness.
 func (v View) Max() Genome {
-	return v.max
+	return v.members[v.max]
 }
 
 // Min returns the genome with the worst fitness.
 func (v View) Min() Genome {
-	return v.min
+	return v.members[v.min]
 }
 
 // Range returns the difference in the maximum and minimum fitness.
 func (v View) Range() float64 {
-	return v.max.Fitness() - v.min.Fitness()
+	return v.Max().Fitness() - v.Min().Fitness()
 }
 
 // Mean returns the average fitness.
