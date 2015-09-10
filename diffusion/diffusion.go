@@ -26,13 +26,13 @@ type node struct {
 	value  evo.Genome
 	peers  []*node
 	valuec chan evo.Genome
-	closec chan chan error
+	closec chan int
 }
 
 // Init must be called on each node before any node is started.
 func (n *node) init() {
 	n.valuec = make(chan evo.Genome)
-	n.closec = make(chan chan error)
+	n.closec = make(chan int)
 }
 
 // Start spins up the main goroutine.
@@ -52,22 +52,14 @@ func (n *node) loop() {
 		// overridden. It causes the current mating routine (which will be using
 		// the old value) to be ignored.
 		manualOverride bool
-
-		// Set whenever an error is encountered
-		err error
 	)
 
-	// set sets the underlying value of the node. If it is different from the
-	// existing value, the old value is closed. If an error occurs, err is set
-	// to the error.
+	// set sets the underlying value of the node.
+	// If it is different from the existing value, the old value is closed.
 	set := func(newval evo.Genome) {
-		var err_ error
 		if n.value != newval {
-			err_ = n.value.Close()
+			n.value.Close()
 			n.value = newval
-		}
-		if err_ != nil {
-			err = err_
 		}
 	}
 
@@ -98,34 +90,26 @@ func (n *node) loop() {
 				set(child)
 			}
 			manualOverride = false
-			if err != nil {
-				updates = nil
-			} else {
-				go mate(n.value)
-			}
+			go mate(n.value)
 
-		// cleanup by closing channels and waiting on the last mating routine
-		case ch := <-n.closec:
+			// cleanup by closing channels and waiting on the last mating routine
+		case x := <-n.closec:
 			close(n.valuec)
-			close(n.closec)
 			if updates != nil {
 				n.value = <-updates
 			}
-			err_ := n.value.Close()
-			if err_ != nil {
-				err = err_
-			}
-			ch <- err
+			n.value.Close()
+			n.closec <- x
 			return
 		}
 	}
 }
 
 // Close stops the main goroutine
-func (n *node) Close() error {
-	errc := make(chan error)
-	n.closec <- errc
-	return <-errc
+func (n *node) Close() {
+	n.closec <- 1
+	<-n.closec
+	close(n.closec)
 }
 
 // Value returns the current underlying value.
@@ -155,14 +139,10 @@ func (g *graph) View() evo.View {
 }
 
 // Close stops the goroutines of all nodes.
-func (g *graph) Close() (err error) {
+func (g *graph) Close() {
 	for i := range g.nodes {
-		err_i := g.nodes[i].Close()
-		if err_i != nil {
-			err = err_i
-		}
+		g.nodes[i].Close()
 	}
-	return err
 }
 
 // Fitness returns the maximum fitness within the graph.

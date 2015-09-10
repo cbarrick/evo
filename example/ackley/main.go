@@ -55,9 +55,7 @@ func (mom *ackley) Cross(suiters ...evo.Genome) evo.Genome {
 	}
 }
 
-func (_ *ackley) Close() error {
-	return nil
-}
+func (_ *ackley) Close() {}
 
 func Random(dim int) (ack *ackley) {
 	ack = new(ackley)

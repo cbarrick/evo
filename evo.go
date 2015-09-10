@@ -4,7 +4,7 @@ package evo
 type Genome interface {
 	Fitness() float64
 	Cross(...Genome) Genome
-	Close() error
+	Close()
 }
 
 type Population interface {
