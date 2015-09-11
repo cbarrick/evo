@@ -73,8 +73,8 @@ func (n *node) loop() {
 		}
 		updates <- value.Cross(suiters...)
 	}
-	go mate(n.value)
 
+	go mate(n.value)
 	for {
 		select {
 
@@ -129,7 +129,7 @@ type graph struct {
 	nodes []node
 }
 
-// View constructs a view of genomes in the graph..
+// View constructs a view of genomes in the graph.
 func (g *graph) View() evo.View {
 	members := make([]evo.Genome, len(g.nodes))
 	for i := range members {
@@ -155,21 +155,10 @@ func (g *graph) Fitness() (f float64) {
 
 // Cross injects the best genome of the suiter into a random node in the graph.
 func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
-	// pick a mate, try not to mate with self
+	// mate by replacing a random node from g
+	// with the best node from a random suiter
 	i := rand.Intn(len(suiters))
 	h := suiters[i].(*graph)
-	if h == g {
-		if len(suiters) > 1 {
-			// remove conflict and try again
-			newsuiters := make([]evo.Genome, len(suiters)-1)
-			copy(newsuiters[0:], suiters[:i])
-			copy(newsuiters[i:], suiters[i+1:])
-			return g.Cross(newsuiters...)
-		}
-		return g // our only option is to mate with self
-	}
-
-	// mate by setting a random node in g with the best node in h
 	g.nodes[rand.Intn(len(g.nodes))].valuec <- h.Max()
 	return g
 }
