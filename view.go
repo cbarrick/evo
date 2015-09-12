@@ -62,8 +62,13 @@ func NewView(subs ...Genome) View {
 	//
 	// See https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 	//
-	// [1]: Donald E. Knuth (1998). The Art of Computer Programming, volume 2: Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
-	// [2]: Chan, Tony F.; Golub, Gene H.; LeVeque, Randall J. (1983). Algorithms for Computing the Sample Variance: Analysis and Recommendations. The American Statistician 37, 242-247. http://www.jstor.org/stable/2683386
+	// [1]: Donald E. Knuth (1998). The Art of Computer Programming, volume 2:
+	//      Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
+	//
+	// [2]: Chan, Tony F.; Golub, Gene H.; LeVeque, Randall J. (1983).
+	//      Algorithms for Computing the Sample Variance: Analysis and
+	//      Recommendations. The American Statistician 37, 242-247.
+	//      http://www.jstor.org/stable/2683386
 	for i := range subs {
 		switch sub := subs[i].(type) {
 
@@ -97,7 +102,7 @@ func NewView(subs ...Genome) View {
 			v.len = newlen
 			v.members = append(v.members, subview.members...)
 
-			subview.Close()
+			subview.Recycle()
 
 		default:
 			subfit := sub.Fitness()
@@ -131,9 +136,11 @@ func NewView(subs ...Genome) View {
 	return v
 }
 
-// Close releases your control of the view.
-// Using a view after closing is not safe.
-func (v View) Close() {
+// Recycle allows resources controlled by a view to be reused by the system,
+// reducing the allocation cost when constructing a view. It is not safe to use
+// a view after it is recycled.
+// TODO: panic if a view is used after being recycled
+func (v View) Recycle() {
 	v.members = v.members[0:0]
 	v.max, v.min = 0, 0
 	v.mean, v.m2, v.len = 0, 0, 0

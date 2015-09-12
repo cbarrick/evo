@@ -90,7 +90,7 @@ func main() {
 		view := population.View()
 		deviation = view.StdDeviation()
 		fmt.Printf("\x1b[2K\r%v", view)
-		view.Close()
+		view.Recycle()
 	}
 
 	// the global maximum fitness is known to be 0 when all variables are 0
@@ -107,6 +107,6 @@ func main() {
 	fmt.Println("Solution:")
 	view := population.View()
 	fmt.Println(view.Max())
-	view.Close()
+	view.Recycle()
 	fmt.Println()
 }

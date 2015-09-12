@@ -125,7 +125,7 @@ func (p *population) View() evo.View {
 func (p *population) Fitness() (f float64) {
 	v := p.View()
 	f = v.Max().Fitness()
-	v.Close()
+	v.Recycle()
 	return f
 }
 
@@ -135,7 +135,7 @@ func (p *population) Cross(suiters ...evo.Genome) evo.Genome {
 	q := suiters[rand.Intn(len(suiters))].(*population)
 	v := q.View()
 	p.com.inject <- v.Max()
-	v.Close()
+	v.Recycle()
 	return p
 }
 
