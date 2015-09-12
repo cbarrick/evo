@@ -7,7 +7,7 @@ import (
 	"math/rand"
 
 	"github.com/cbarrick/evo"
-	"github.com/cbarrick/evo/diffusion"
+	"github.com/cbarrick/evo/gen"
 )
 
 type ackley struct {
@@ -82,7 +82,7 @@ func main() {
 	for i := range acks {
 		acks[i] = Random(dim)
 	}
-	population := diffusion.Hypercube(acks)
+	population := gen.New(acks...)
 
 	// update sets the deviation variable and prints a summary to the terminal
 	// the string "\x1b[2K" is the escape code to clear the line
