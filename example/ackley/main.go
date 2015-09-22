@@ -7,7 +7,7 @@ import (
 	"math/rand"
 
 	"github.com/cbarrick/evo"
-	"github.com/cbarrick/evo/gen"
+	"github.com/cbarrick/evo/pop/gen"
 )
 
 type ackley struct {
