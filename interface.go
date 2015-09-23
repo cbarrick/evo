@@ -11,16 +11,3 @@ type Population interface {
 	Genome
 	View() View
 }
-
-// Functions
-// -------------------------
-
-func Tournament(suiters ...Genome) (max Genome) {
-	max = suiters[0]
-	for i := range suiters {
-		if suiters[i].Fitness() > max.Fitness() {
-			max = suiters[i]
-		}
-	}
-	return max
-}
