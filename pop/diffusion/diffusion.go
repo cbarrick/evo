@@ -149,7 +149,7 @@ func (g *graph) Close() {
 func (g *graph) Fitness() (f float64) {
 	v := g.View()
 	f = v.Max().Fitness()
-	v.Close()
+	v.Recycle()
 	return f
 }
 
@@ -167,7 +167,7 @@ func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
 func (g *graph) Max() (max evo.Genome) {
 	v := g.View()
 	max = v.Max()
-	v.Close()
+	v.Recycle()
 	return max
 }
 
