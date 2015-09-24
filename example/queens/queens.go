@@ -1,4 +1,4 @@
-package main
+package queens
 
 import (
 	"fmt"
@@ -12,10 +12,6 @@ import (
 	"github.com/cbarrick/evo/pop/graph"
 )
 
-const (
-	dim = 256 // the dimension to be solved
-)
-
 // queens is our genome type
 type queens struct {
 	gene    []int     // permutation representation of n-queens
@@ -25,24 +21,7 @@ type queens struct {
 
 // The genePool is used to cache allocated but unused genes. By using a
 // genePool, we greatly reduce the allocation cost of the program.
-var genePool = sync.Pool{
-	New: func() interface{} {
-		return rand.Perm(dim)
-	},
-}
-
-// random creates a random n-queens genome.
-// We use Fisher-Yates shuffle to produce random permutations.
-func random(n int) *queens {
-	gene := genePool.Get().([]int)
-	for i := dim-1; 1 <= i; i-- {
-		j := rand.Intn(i+1)
-		gene[i], gene[j] = gene[j], gene[i]
-	}
-	return &queens{
-		gene: gene,
-	}
-}
+var genePool sync.Pool
 
 // String produces the gene contents
 func (q *queens) String() string {
@@ -114,19 +93,36 @@ func (q *queens) Close() {
 	genePool.Put(q.gene)
 }
 
-func main() {
+func Main(dim int) {
 	var (
 		pop  evo.Population
 		size = 1024 // the size of the population
 		isl  = 8    // the number of islands
 	)
 
+	// default dimension is 256
+	if dim <= 0 {
+		dim = 256
+	}
+
+	genePool = sync.Pool{
+		New: func() interface{} {
+			return rand.Perm(dim)
+		},
+	}
+
 	fmt.Printf("queens: dimension=%d population=%d\n", dim, size)
 
 	// random initial population
+	// we pull a gene from the genePool and apply Fisher-Yates shuffle
 	init := make([]evo.Genome, size)
 	for i := range init {
-		init[i] = random(dim)
+		gene := genePool.Get().([]int)
+		for i := dim-1; 1 <= i; i-- {
+			j := rand.Intn(i+1)
+			gene[i], gene[j] = gene[j], gene[i]
+		}
+		init[i] = &queens{gene: gene}
 	}
 
 	// construct the population
