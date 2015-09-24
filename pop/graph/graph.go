@@ -1,16 +1,10 @@
-// Package diffusion implements a fine-grained parallel genetic algorithm.
-//
-// A diffusion population maps each genome to a node in a connected graph. Each
-// node manages one slot of the population. For each iteration, a node calls the
-// `Cross` method of its underlying genome, passing the adjacent genomes as the
-// mating pool. The underlying genome is replaced by the result of that call.
-// In this way, good genes diffuse through the population over many iterations.
-// Each node manages its lifecycle in parallel.
-package diffusion
+// Package graph needs documentation
+package graph
 
 import (
 	"math/rand"
 	"strconv"
+	"time"
 
 	"github.com/cbarrick/evo"
 )
@@ -23,84 +17,64 @@ import (
 // all other nodes in the graph. The underlying genome is only allowed to mate
 // with genomes from adjacent nodes.
 type node struct {
-	value  evo.Genome
+	val    evo.Genome
 	peers  []*node
-	valuec chan evo.Genome
+	delayc chan time.Duration
+	setval chan evo.Genome
+	getval chan evo.Genome
 	closec chan int
 }
 
-// Init must be called on each node before any node is started.
 func (n *node) init() {
-	n.valuec = make(chan evo.Genome)
+	n.delayc = make(chan time.Duration)
+	n.setval = make(chan evo.Genome, 1)
+	n.getval = make(chan evo.Genome)
 	n.closec = make(chan int)
 }
 
-// Start spins up the main goroutine.
-func (n *node) Start() {
-	go n.loop()
-}
-
-func (n *node) loop() {
+func (n *node) run() {
 	var (
-		// Used as temporary storage by the mating routine
+		delay   time.Duration
+		mate    = time.After(delay)
 		suiters = make([]evo.Genome, len(n.peers))
-
-		// Channel on which the mating routine communicates
-		updates = make(chan evo.Genome)
-
-		// This flag is set when the value within the node has been recently
-		// overridden. It causes the current mating routine (which will be using
-		// the old value) to be ignored.
-		manualOverride bool
 	)
 
-	// set sets the underlying value of the node.
-	// If it is different from the existing value, the old value is closed.
-	set := func(newval evo.Genome) {
-		if n.value != newval {
-			n.value.Close()
-			n.value = newval
-		}
-	}
-
-	// mate calls the Cross method of the underlying genome of the node,
-	// presenting the adjacent genomes as suiters. The result of the cross is
-	// returned over the updates channel. Exactly one instance of this function
-	// is running as a goroutine as long as the node is alive.
-	mate := func(value evo.Genome) {
-		for i := range suiters {
-			suiters[i] = n.peers[i].Value()
-		}
-		updates <- value.Cross(suiters...)
-	}
-
-	go mate(n.value)
 	for {
 		select {
 
-		// get and set the underlying genome
-		case n.valuec <- n.value:
-		case val := <-n.valuec:
-			set(val)
-			manualOverride = true
+		// gat and set the delay
+		case n.delayc <- delay:
+		case delay = <-n.delayc:
 
-		// update the underlying genome whenever the mating routine returns
-		case child := <-updates:
-			if !manualOverride {
-				set(child)
+		// get underlying genome
+		case n.getval <- n.val:
+
+		// set the underlying genome
+		case newval := <-n.setval:
+			if n.val != newval {
+				n.val.Close()
+				n.val = newval
 			}
-			manualOverride = false
-			go mate(n.value)
+			n.setval = make(chan evo.Genome, 1)
 
-			// cleanup by closing channels and waiting on the last mating routine
+		// close channels and underlying genome
 		case x := <-n.closec:
-			close(n.valuec)
-			if updates != nil {
-				n.value = <-updates
-			}
-			n.value.Close()
+			close(n.getval)
+			n.val.Close()
 			n.closec <- x
 			return
+
+		// do one iteration
+		case <-mate:
+			mate = nil
+			go func(setval chan evo.Genome) {
+				for i := range n.peers {
+					suiters[i] = n.peers[i].value()
+				}
+				newval := n.val.Cross(suiters...)
+				setval <- newval
+				mate = time.After(<-n.delayc)
+			}(n.setval)
 		}
 	}
 }
@@ -113,40 +87,53 @@ func (n *node) Close() {
 }
 
 // Value returns the current underlying value.
-func (n *node) Value() (value evo.Genome) {
-	value = <-n.valuec
-	if value == nil {
-		return n.value
+func (n *node) value() (val evo.Genome) {
+	val = <-n.getval
+	if val == nil {
+		return n.val
 	}
-	return value
+	return val
 }
+
+// SetValue sets the value of the node
+func (n *node) setValue(val evo.Genome) {
+	c := n.setval
+	c <- val
+	<-c
+}
+
+// SetDelay sets a delay between each iteration
+func (n *node) setDelay(d time.Duration) {
+	n.delayc <- d
+}
+
 
 // Graphs
 // -------------------------
 
 // Graphs aggregate nodes into a population.
-type graph struct {
+type Graph struct {
 	nodes []node
 }
 
 // View constructs a view of genomes in the graph.
-func (g *graph) View() evo.View {
+func (g *Graph) View() evo.View {
 	members := make([]evo.Genome, len(g.nodes))
 	for i := range members {
-		members[i] = g.nodes[i].Value()
+		members[i] = g.nodes[i].value()
 	}
 	return evo.NewView(members...)
 }
 
 // Close stops the goroutines of all nodes.
-func (g *graph) Close() {
+func (g *Graph) Close() {
 	for i := range g.nodes {
 		g.nodes[i].Close()
 	}
 }
 
 // Fitness returns the maximum fitness within the graph.
-func (g *graph) Fitness() (f float64) {
+func (g *Graph) Fitness() (f float64) {
 	v := g.View()
 	f = v.Max().Fitness()
 	v.Recycle()
@@ -154,21 +141,29 @@ func (g *graph) Fitness() (f float64) {
 }
 
 // Cross injects the best genome of the suiter into a random node in the graph.
-func (g *graph) Cross(suiters ...evo.Genome) evo.Genome {
+func (g *Graph) Cross(suiters ...evo.Genome) evo.Genome {
 	// mate by replacing a random node from g
 	// with the best node from a random suiter
 	i := rand.Intn(len(suiters))
-	h := suiters[i].(*graph)
-	g.nodes[rand.Intn(len(g.nodes))].valuec <- h.Max()
+	h := suiters[i].(*Graph)
+	g.nodes[rand.Intn(len(g.nodes))].setValue(h.Max())
 	return g
 }
 
 // Max returns the best genome in the population.
-func (g *graph) Max() (max evo.Genome) {
+func (g *Graph) Max() (max evo.Genome) {
 	v := g.View()
 	max = v.Max()
 	v.Recycle()
 	return max
+}
+
+// SetDelay sets a delay between each iteration of each node
+func (g *Graph) SetDelay(d time.Duration) *Graph {
+	for i := range g.nodes {
+		g.nodes[i].setDelay(d)
+	}
+	return g
 }
 
 // Functions
@@ -176,12 +171,12 @@ func (g *graph) Max() (max evo.Genome) {
 
 // New creates a new diffusion population with a layout chosen by the system.
 // Currently, the hypercube layout is always used.
-func New(values []evo.Genome) evo.Population {
+func New(values []evo.Genome) *Graph {
 	return Hypercube(values)
 }
 
 // Grid creates a new diffusion population arranged in a 2D grid.
-func Grid(values []evo.Genome) evo.Population {
+func Grid(values []evo.Genome) *Graph {
 	offset := len(values) / 2
 	layout := make([][]int, len(values))
 	for i := range values {
@@ -195,7 +190,7 @@ func Grid(values []evo.Genome) evo.Population {
 }
 
 // Hypercube creates a new diffusion population arranged in a hypercube graph.
-func Hypercube(values []evo.Genome) evo.Population {
+func Hypercube(values []evo.Genome) *Graph {
 	var dimension uint
 	for dimension = 0; len(values) > (1 << dimension); dimension++ {
 	}
@@ -210,7 +205,7 @@ func Hypercube(values []evo.Genome) evo.Population {
 }
 
 // Ring creates a new diffusion population arranged in a ring.
-func Ring(values []evo.Genome) evo.Population {
+func Ring(values []evo.Genome) *Graph {
 	layout := make([][]int, len(values))
 	for i := range values {
 		layout[i] = make([]int, 2)
@@ -224,7 +219,7 @@ func Ring(values []evo.Genome) evo.Population {
 // The layout is specified as an adjacency list in terms of position, e.g. if
 // `layout[0] == [1,2,3]` then the 0th node will have three peers, namely the
 // 1st, 2nd, and 3rd nodes.
-func Custom(layout [][]int, values []evo.Genome) evo.Population {
+func Custom(layout [][]int, values []evo.Genome) *Graph {
 
 	// validate the layout
 	size := len(values)
@@ -240,14 +235,14 @@ func Custom(layout [][]int, values []evo.Genome) evo.Population {
 	}
 
 	// make the graph
-	g := new(graph)
+	g := new(Graph)
 	g.nodes = make([]node, len(values))
 
 	// for each node, assign its initial value and peers
 	// and initialize its other members
 	for i := range g.nodes {
 		n := &g.nodes[i]
-		n.value = values[i]
+		n.val = values[i]
 		n.peers = make([]*node, len(layout[i]))
 		for j := range layout[i] {
 			n.peers[j] = &g.nodes[j]
@@ -257,7 +252,7 @@ func Custom(layout [][]int, values []evo.Genome) evo.Population {
 
 	// start each node's main loop
 	for i := range g.nodes {
-		g.nodes[i].Start()
+		go g.nodes[i].run()
 	}
 
 	return g

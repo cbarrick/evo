@@ -5,9 +5,10 @@ import (
 )
 
 func BinaryTournament(suiters ...Genome) Genome {
+	var x, y int
 	if len(suiters) > 2 {
-		x := rand.Intn(len(suiters))
-		y := x
+		x = rand.Intn(len(suiters))
+		y = x
 		for y == x {
 			y = rand.Intn(len(suiters))
 		}
