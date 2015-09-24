@@ -12,6 +12,9 @@ import (
 	"github.com/cbarrick/evo/pop/graph"
 )
 
+// We count the number of fitness computations
+var count int
+
 // queens is our genome type
 type queens struct {
 	gene    []int     // permutation representation of n-queens
@@ -23,7 +26,7 @@ type queens struct {
 // genePool, we greatly reduce the allocation cost of the program.
 var genePool sync.Pool
 
-// String produces the gene contents
+// String produces the gene contents and fitness
 func (q *queens) String() string {
 	return fmt.Sprintf("%v@%v", q.gene, q.Fitness())
 }
@@ -36,12 +39,12 @@ func (q *queens) String() string {
 func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 
 	// Selection:
-	// TODO: Document
+	// Select each parent using a simple random binary tournament
 	mom := evo.BinaryTournament(matingPool...).(*queens)
 	dad := evo.BinaryTournament(matingPool...).(*queens)
 
 	// Crossover:
-	// Take the best child from partially mapped crossover (PMX)
+	// Cycle crossover
 	// We randomly decide who is the first and second parent
 	var p1, p2 []int
 	if rand.Float64() > 0.5 {
@@ -63,8 +66,11 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 	}
 
 	// Replacement:
-	// Only replace if the child is better
-	return evo.BinaryTournament(q, child)
+	// Only replace if the child is better or equal
+	if q.Fitness() > child.Fitness() {
+		return q
+	}
+	return child
 }
 
 // Fitness returns the negative count of conflicts.
@@ -84,6 +90,9 @@ func (q *queens) Fitness() float64 {
 			}
 		}
 		q.fitness /= 2
+
+		// we count the number of fitness evaluations
+		count++
 	})
 	return q.fitness
 }
@@ -94,17 +103,20 @@ func (q *queens) Close() {
 }
 
 func Main(dim int) {
-	var (
-		pop  evo.Population
-		size = 1024 // the size of the population
-		isl  = 8    // the number of islands
-	)
-
 	// default dimension is 256
 	if dim <= 0 {
 		dim = 256
 	}
 
+	// tunables
+	var (
+		pop   evo.Population
+		size  = dim * 2         // the size of the population
+		isl   = 8               // the number of islands
+		delay = 1 * time.Second // delay between island communication
+	)
+
+	// the genePool lets us recycle genes to reduce allocation cost
 	genePool = sync.Pool{
 		New: func() interface{} {
 			return rand.Perm(dim)
@@ -131,7 +143,17 @@ func Main(dim int) {
 	for i := range islands {
 		islands[i] = graph.Hypercube(init[i*isleSize:(i+1)*isleSize])
 	}
-	pop = graph.Ring(islands).SetDelay(1 * time.Second)
+	pop = graph.Ring(islands).SetDelay(delay)
+
+	// prints summary stats
+	// "\x1b[2K" is the escape code to clear the line
+	print := func(v evo.View) {
+		fmt.Printf("\x1b[2K\rCount: %d | Max: %d | Min: %d | SD: %f",
+			count,
+			int(v.Max().Fitness()),
+			int(v.Min().Fitness()),
+			v.StdDeviation())
+	}
 
 	// control loop
 	// continuously query the population for stats and print them
@@ -139,13 +161,11 @@ func Main(dim int) {
 	// kill the population when done
 	for {
 		view := pop.View()
-
-		// print stats
-		// "\x1b[2K" is the escape code to clear the line
-		fmt.Printf("\x1b[2K\r%v", view)
+		print(view)
 
 		// stop when fitness is 0
-		if view.Max().Fitness() == 0 {
+		// or we count 1 million fitness computations
+		if view.Max().Fitness() == 0 || count >= 1000000 {
 			fmt.Printf("\nSolution: %v\n", view.Max())
 			pop.Close()
 			view.Recycle()
@@ -154,5 +174,8 @@ func Main(dim int) {
 
 		// recycling the view reduces allocation cost of creating the next view
 		view.Recycle()
+
+		// sleep before next poll
+		<-time.After(1 * time.Second)
 	}
 }
