@@ -1,4 +1,4 @@
-package evo
+package perm
 
 import (
 	"math/rand"
@@ -80,11 +80,11 @@ func PMX(mom, dad []int) (child []int) {
 // Cycle crossover is a good choice when you want the inherited alleals to keep
 // the position inherited from the parents.
 func CycleX(mom, dad []int) (child []int) {
-	cycles := make([][]int, 0)
+	var cycles [][]int
 	taken := make([]bool, len(mom))
 	for i := range mom {
 		if !taken[i] {
-			cycle := make([]int, 0)
+			var cycle []int
 			for j := i; !taken[j]; {
 				taken[j] = true
 				cycle = append(cycle, j)

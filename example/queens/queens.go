@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cbarrick/evo"
+	"github.com/cbarrick/evo/perm"
 	"github.com/cbarrick/evo/pop/graph"
 )
 
@@ -70,7 +71,7 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 		p1, p2 = dad.gene, mom.gene
 	}
 	child := &queens{
-		gene: evo.CycleX(p1, p2),
+		gene: perm.CycleX(p1, p2),
 	}
 
 	// Mutation:
