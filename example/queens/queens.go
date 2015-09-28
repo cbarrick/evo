@@ -12,23 +12,54 @@ import (
 	"github.com/cbarrick/evo/pop/graph"
 )
 
-// We count the number of fitness computations
-var count int
+// Count counts the number of fitness evaluations. It is syncronised because
+// fitness evaluations may happen in parrallel.
+var count struct{
+	sync.RWMutex
+	val int
+}
 
-// queens is our genome type
+// The queens type is our genome type
 type queens struct {
 	gene    []int     // permutation representation of n-queens
 	fitness float64   // cache of the fitness
 	once    sync.Once // used to sync fitness computations
 }
 
-// The genePool is used to cache allocated but unused genes. By using a
-// genePool, we greatly reduce the allocation cost of the program.
-var genePool sync.Pool
-
-// String produces the gene contents and fitness
+// String produces the gene contents and fitness.
+// Useful for debugging.
 func (q *queens) String() string {
 	return fmt.Sprintf("%v@%v", q.gene, q.Fitness())
+}
+
+// The genome does not use the close method.
+// This could be used to implement genome recycling and reduce allocation.
+func (q *queens) Close() {}
+
+// Fitness returns the negative count of conflicts.
+// The value is cached so the computation only occurs once.
+func (q *queens) Fitness() float64 {
+	q.once.Do(func() {
+		for i := range q.gene {
+			for j, k := 1, i-1; k >= 0; j, k = j+1, k-1 {
+				if q.gene[k] == q.gene[i]+j || q.gene[k] == q.gene[i]-j {
+					q.fitness--
+				}
+			}
+			for j, k := 1, i+1; k < len(q.gene); j, k = j+1, k+1 {
+				if q.gene[k] == q.gene[i]+j || q.gene[k] == q.gene[i]-j {
+					q.fitness--
+				}
+			}
+		}
+		q.fitness /= 2
+
+		// we count the number of fitness evaluations
+		count.Lock()
+		count.val++
+		count.Unlock()
+	})
+	return q.fitness
 }
 
 // Cross is the implmentation of the inner loop of the GA
@@ -73,37 +104,12 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-// Fitness returns the negative count of conflicts.
-// The value is cached so the computation only occurs once.
-func (q *queens) Fitness() float64 {
-	q.once.Do(func() {
-		for i := range q.gene {
-			for j, k := 1, i-1; k >= 0; j, k = j+1, k-1 {
-				if q.gene[k] == q.gene[i]+j || q.gene[k] == q.gene[i]-j {
-					q.fitness--
-				}
-			}
-			for j, k := 1, i+1; k < len(q.gene); j, k = j+1, k+1 {
-				if q.gene[k] == q.gene[i]+j || q.gene[k] == q.gene[i]-j {
-					q.fitness--
-				}
-			}
-		}
-		q.fitness /= 2
-
-		// we count the number of fitness evaluations
-		count++
-	})
-	return q.fitness
-}
-
-// Close returns the gene to the genePool
-func (q *queens) Close() {
-	genePool.Put(q.gene)
-}
-
+// This is the entry point of our program.
+//
+// We construct an island model population where each island is a diffusion
+// population. The islands are arranged in a ring, and the nodes of each
+// diffusion population are arranged in a hypercube.
 func Main(dim int) {
-	// default dimension is 256
 	if dim <= 0 {
 		dim = 256
 	}
@@ -116,25 +122,12 @@ func Main(dim int) {
 		delay = 1 * time.Second // delay between island communication
 	)
 
-	// the genePool lets us recycle genes to reduce allocation cost
-	genePool = sync.Pool{
-		New: func() interface{} {
-			return rand.Perm(dim)
-		},
-	}
-
 	fmt.Printf("queens: dimension=%d population=%d\n", dim, size)
 
 	// random initial population
-	// we pull a gene from the genePool and apply Fisher-Yates shuffle
 	init := make([]evo.Genome, size)
 	for i := range init {
-		gene := genePool.Get().([]int)
-		for i := dim-1; 1 <= i; i-- {
-			j := rand.Intn(i+1)
-			gene[i], gene[j] = gene[j], gene[i]
-		}
-		init[i] = &queens{gene: gene}
+		init[i] = &queens{gene: rand.Perm(dim)}
 	}
 
 	// construct the population
@@ -148,11 +141,13 @@ func Main(dim int) {
 	// prints summary stats
 	// "\x1b[2K" is the escape code to clear the line
 	print := func(v evo.View) {
+		count.RLock()
 		fmt.Printf("\x1b[2K\rCount: %d | Max: %d | Min: %d | SD: %f",
-			count,
+			count.val,
 			int(v.Max().Fitness()),
 			int(v.Min().Fitness()),
 			v.StdDeviation())
+		count.RUnlock()
 	}
 
 	// control loop
@@ -165,17 +160,20 @@ func Main(dim int) {
 
 		// stop when fitness is 0
 		// or we count 1 million fitness computations
-		if view.Max().Fitness() == 0 || count >= 1000000 {
+		count.RLock()
+		if view.Max().Fitness() == 0 || count.val >= 1000000 {
 			fmt.Printf("\nSolution: %v\n", view.Max())
+			count.RUnlock()
 			pop.Close()
 			view.Recycle()
 			return
 		}
+		count.RUnlock()
 
 		// recycling the view reduces allocation cost of creating the next view
 		view.Recycle()
 
 		// sleep before next poll
-		<-time.After(1 * time.Second)
+		<-time.After(500 * time.Millisecond)
 	}
 }
