@@ -12,8 +12,8 @@ import (
 	"github.com/cbarrick/evo/pop/graph"
 )
 
-// Count counts the number of fitness evaluations. It is syncronised because
-// fitness evaluations may happen in parrallel.
+// Count counts the number of fitness evaluations.
+// It is syncronised because fitness evaluations may happen in parrallel.
 var count struct{
 	sync.RWMutex
 	val int
@@ -62,7 +62,7 @@ func (q *queens) Fitness() float64 {
 	return q.fitness
 }
 
-// Cross is the implmentation of the inner loop of the GA
+// Cross is the implementation of the inner loop of the GA
 //
 // Cross is called in-parallel for each position in the population. The receiver
 // of the method is the genome currently occupying that position. The genome
@@ -77,15 +77,7 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 	// Crossover:
 	// Cycle crossover
 	// We randomly decide who is the first and second parent
-	var p1, p2 []int
-	if rand.Float64() > 0.5 {
-		p1, p2 = mom.gene, dad.gene
-	} else {
-		p1, p2 = dad.gene, mom.gene
-	}
-	child := &queens{
-		gene: perm.CycleX(p1, p2),
-	}
+	child := &queens{gene: perm.CycleX(mom.gene, dad.gene)}
 
 	// Mutation:
 	// Perform n random swaps where n is taken from an exponential distribution
@@ -104,7 +96,7 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-// This is the entry point of our program.
+// Main is the entry point of our program.
 //
 // We construct an island model population where each island is a diffusion
 // population. The islands are arranged in a ring, and the nodes of each
@@ -152,7 +144,6 @@ func Main(dim int) {
 
 	// control loop
 	// continuously query the population for stats and print them
-	// reseed the population if it converges early
 	// kill the population when done
 	for {
 		view := pop.View()
@@ -161,7 +152,7 @@ func Main(dim int) {
 		// stop when fitness is 0
 		// or we count 1 million fitness computations
 		count.RLock()
-		if view.Max().Fitness() == 0 || count.val >= 1000000 {
+		if view.Max().Fitness() == 0 || count.val >= 1e6 {
 			fmt.Printf("\nSolution: %v\n", view.Max())
 			count.RUnlock()
 			pop.Close()
