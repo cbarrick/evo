@@ -136,7 +136,7 @@ func (g *Graph) Close() {
 func (g *Graph) Fitness() (f float64) {
 	v := g.View()
 	f = v.Max().Fitness()
-	v.Recycle()
+	v.Close()
 	return f
 }
 
@@ -146,16 +146,11 @@ func (g *Graph) Cross(suiters ...evo.Genome) evo.Genome {
 	// with the best node from a random suiter
 	i := rand.Intn(len(suiters))
 	h := suiters[i].(*Graph)
-	g.nodes[rand.Intn(len(g.nodes))].setValue(h.Max())
+	v := h.View()
+	max := v.Max()
+	g.nodes[rand.Intn(len(g.nodes))].setValue(max)
+	v.Close()
 	return g
-}
-
-// Max returns the best genome in the population.
-func (g *Graph) Max() (max evo.Genome) {
-	v := g.View()
-	max = v.Max()
-	v.Recycle()
-	return max
 }
 
 // SetDelay sets a delay between each iteration of each node

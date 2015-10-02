@@ -102,7 +102,7 @@ func NewView(subs ...Genome) View {
 			v.len = newlen
 			v.members = append(v.members, subview.members...)
 
-			subview.Recycle()
+			subview.Close()
 
 		default:
 			subfit := sub.Fitness()
@@ -136,11 +136,11 @@ func NewView(subs ...Genome) View {
 	return v
 }
 
-// Recycle allows resources controlled by a view to be reused by the system,
+// Close allows resources controlled by a view to be reused by the system,
 // reducing the allocation cost when constructing a view. It is not safe to use
-// a view after it is recycled.
-// TODO: panic if a view is used after being recycled
-func (v View) Recycle() {
+// a view after it is closed.
+// TODO: panic if a view is used after being closed
+func (v View) Close() {
 	v.members = v.members[0:0]
 	v.max, v.min = 0, 0
 	v.mean, v.m2, v.len = 0, 0, 0

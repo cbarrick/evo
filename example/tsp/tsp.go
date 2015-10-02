@@ -286,13 +286,13 @@ func Main() {
 			fmt.Printf("\nSolution: %v\n", view.Max())
 			count.RUnlock()
 			pop.Close()
-			view.Recycle()
+			view.Close()
 			return
 		}
 		count.RUnlock()
 
 		// recycling the view reduces allocation cost of creating the next view
-		view.Recycle()
+		view.Close()
 
 		// sleep before next poll
 		<-time.After(500 * time.Millisecond)
