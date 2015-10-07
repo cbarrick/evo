@@ -19,7 +19,7 @@ package evo
 //
 // Genomes must be pointer types.
 type Genome interface {
-	Cross(...Genome) Genome
+	Evolve(...Genome) Genome
 	Fitness() float64
 	Close()
 }

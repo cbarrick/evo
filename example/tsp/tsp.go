@@ -202,12 +202,12 @@ func (t *tsp) Fitness() float64 {
 	return t.fitness
 }
 
-// Cross is the implementation of the inner loop of the GA
+// Evolve is the implementation of the inner loop of the GA
 //
-// Cross is called in-parallel for each position in the population. The receiver
-// of the method is the genome currently occupying that position. The genome
-// returned will occupy that position next iteration.
-func (t *tsp) Cross(matingPool ...evo.Genome) evo.Genome {
+// Evolve is called in-parallel for each position in the population. The
+// receiver of the method is the genome currently occupying that position. The
+// genome returned will occupy that position next iteration.
+func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 
 	// Selection:
 	// Select each parent using a simple random binary tournament

@@ -61,7 +61,7 @@ func (pop *population) run() {
 		case <-mate:
 			for i := range pop.members {
 				go func(i int, members []evo.Genome) {
-					pop.updates <- members[i].Cross(members...)
+					pop.updates <- members[i].Evolve(members...)
 				}(i, pop.members)
 			}
 
@@ -114,9 +114,9 @@ func (pop *population) Fitness() float64 {
 	return pop.Stats().Max()
 }
 
-// Cross performs a random migration between this population and a random suiter.
-func (pop *population) Cross(suiters ...evo.Genome) evo.Genome {
-	panic("Cross not yet implemented on generational populations")
+// Evolve performs a random migration between this population and a random suiter.
+func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
+	panic("Evolve not yet implemented on generational populations")
 }
 
 // Iterator

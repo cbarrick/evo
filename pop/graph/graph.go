@@ -63,7 +63,7 @@ func (n *node) run() {
 						return
 					}
 				}
-				newval := oldval.Cross(suiters...)
+				newval := oldval.Evolve(suiters...)
 				done <- newval
 			}(n.val)
 
@@ -145,8 +145,8 @@ func (g *Graph) Fitness() float64 {
 	return g.Stats().Max()
 }
 
-// Cross performs a random migration between this graph and a random suiter.
-func (g *Graph) Cross(suiters ...evo.Genome) evo.Genome {
+// Evolve performs a random migration between this graph and a random suiter.
+func (g *Graph) Evolve(suiters ...evo.Genome) evo.Genome {
 	h := suiters[rand.Intn(len(suiters))].(*Graph)
 	i := rand.Intn(len(g.nodes))
 	j := rand.Intn(len(h.nodes))

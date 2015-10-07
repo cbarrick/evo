@@ -1,4 +1,7 @@
-// http://www.sfu.ca/~ssurjano/ackley.html
+// The ackley example is currently unmaintained.
+//
+// It will be updates to demonstrate an "evolution strategy" approach sometime
+// in the future.
 package main
 
 import (
