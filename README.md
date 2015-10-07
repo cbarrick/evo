@@ -1,30 +1,36 @@
 # Evo
 
-Evo is a library in the Go programming language for genetic algorithms and other evolutionary computation techniques.
+Evo is a package to assist the implementation of evolutionary algorithms in Go.
+
+```
+go get github.com/cbarrick/evo
+```
+
+
+## Status
+
+Evo is a young project under active development. Reviews and comments on both the interface and implementation are welcome. An official (beta) release is planned for December 2015.
+
+
+## Documentation
+
+https://godoc.org/github.com/cbarrick/evo
 
 
 ## Overview
 
-Working with Evo is clean and flexible. The API is oriented around two interfaces: `Genome` and `Population`. Genomes represent candidate solutions to the user's problem and are implemented by the user. The genetic encoding of the solution and the domain-specific operation of the evolution loop are defined in the context of a genome type. Populations are collections of genomes that evolve over time. Different populations provided different kinds of evolution loops and are provided by Evo.
+Evo exposes a clean and flexible  API oriented around two interfaces: `Genome` and `Population`. Genomes represent candidate solutions to the user's problem and are implemented by the user. Genomes evolve in the context of a population determined by the `Evolve` method. Populations evolve a collection of genomes and are provided by Evo. The different populations provided allow for the construction of novel architectures.
 
-### Genomes
+Genomes provide the body of the evolutionary loop as the Evolve method. For each genome in a population, the Evolve method is called, passing some subset of the population, called the suitors, as arguments. The Evolve method then applies operators to the suiters (selection, mutation, etc) and returns a genome that will replace the caller within the population for the next iteration.
 
-Genomes are defined by the user and both encode a candidate solution and define the procedure for evolving better solutions. The evolution procedure is a method called `Cross` defined on your genome type. For each position in a population, the Cross method is called, passing a mating pool as the argument. It is important to note that no selection pressure is applied to that mating pool by the system. It is the responsibility of the Cross method to select zero or more "parent" genomes and produce a "child" genome by applying domain-specific operators (crossover, mutation, etc). The method receiver is the genome currently occupying the position, and the return value will replace that genome in the population.
+Populations orchestrate the evolution of genomes. Populations provided by Evo live under the package `github.com/cbarrick/evo/pop`. The `generational` population implements a traditional generation-based loop with master-slave parallelism. Each genome receives the entire population as suitors, and the population is only updated after all genomes have returned. The `graph` population maps each genome to a node in a graph. Each genome only receives the neighboring genomes as suitors, and each node is evolved in parallel.
 
-The Cross method will be called in parallel for different positions of the population. If you desire greater control, you can coordinate the evolution of a population using a goroutine. However, by synchronizing you will be removing an important opportunity for massive parallelism.
-
-Genomes may optionally implement a `Close` method if they control any closable resources. The Close method is called in two cases. First, if a call to Cross results in a genome being replaced, that genome is closed. Second, when the population is closed, all member genomes are closed.
-
-### Populations
-
-Populations are collections of genomes that evolve over time. Each population provides slightly different semantics for the evolution loop. For specific details, see the documentation for each population type.
-
-Populations are composable, allowing the user to design new and novel evolution loops. Composability is accomplished because each population type also implements the genome interface. Typically, when `Cross` is called on a population, the receiver picks a random population from the mating pool and incorporates the best genome of that population into itself. The `Close` method of all populations simply stops the underlying evolution loop.
+Populations themselves implement the Genome interface. The Evolve method on populations implements uniform random migration: A random suitor is chosen and asserted to be a population of the same type. Then the population and its suitor exchange random members. This allows the island model to be implemented by nesting populations.
 
 
 ## Examples
 
-You can browse example problems in the [example subpackage](https://github.com/cbarrick/evo/tree/master/example)
+You can browse example problems in the [example subpackage](https://github.com/cbarrick/evo/tree/master/example). The examples are maintained as a development tool rather than to provide optimal solutions to the problems they tackle. Reading the examples should give you a good idea of how easy it is to write code with Evo.
 
 
 ## License

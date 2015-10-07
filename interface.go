@@ -1,21 +1,21 @@
 package evo
 
 // Genomes are members of populations and define the inner loop of the
-// evolutionary algorithm. The inner loop is defined by the Cross method: For
-// each iteration, the Cross method is called in parallel on some subset of the
-// population. The method receives some subset of the population as arguments,
-// and the value returned will replace the caller in the population. The user is
-// expected to define a genome for their search space.
+// evolutionary algorithm. The inner loop is defined by the Evolve method:
+// For each genome in a population, the Evolve method is called, passing some
+// subset of the population, called the suitors, as arguments. The value
+// returned is will replace the caller in the next iteration.
 //
-// Genomes may implement two optional methods, Fitness and Close. The fitness
+// Genomes may implement two optional methods, Fitness and Close. The Fitness
 // method has no effect on the population, but may be used by helper methods
 // included within Evo. The Stats method of populations returns statistics of
-// the population's fitness. You may simply return 0 if you do not wish to
-// implement Fitness.
+// the population's fitness, thus Fitness must be non-trivial to use this
+// feature. You may simply return 0 if you do not wish to implement Fitness.
 //
 // The Close method will be registered as a finalizer on the genome. This can
 // be used to recycle memory from dying genomes to newborn genomes. The Close
-// method is not guarenteed to be called. See https://godoc.org/runtime#SetFinalizer
+// method is not guarenteed to be called.
+// See https://godoc.org/runtime#SetFinalizer
 //
 // Genomes must be pointer types.
 type Genome interface {
@@ -24,9 +24,8 @@ type Genome interface {
 	Close()
 }
 
-// Populations control a set of genomes and define the architecture of the
-// evolutionary algorithm. Populations implement Genome, so novel architectures,
-// like the island model, can be implemented by nesting populations.
+// Populations orchestrate the evolution of genomes. Populations implement
+// Genome, thus the island model, can be implemented by nesting populations.
 //
 // Populations execute the evolutionary algorithm in a separate goroutine. The
 // Close method stops that process.
