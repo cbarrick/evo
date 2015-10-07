@@ -15,11 +15,11 @@ func main() {
 	if len(os.Args) == 1 {
 		cmd := path.Base(os.Args[0])
 		fmt.Printf(
-			"usage: %v <example> [<arg>...]\n" +
-			"\n" +
-			"examples:\n" +
-			" queens  n-queens, takes n as arg, default n=256\n" +
-			" tsp     travelling salesman, takes no args\n", cmd)
+			"usage: %v <example> [<arg>...]\n"+
+				"\n"+
+				"examples:\n"+
+				" queens  n-queens, takes n as arg, default n=256\n"+
+				" tsp     travelling salesman, takes no args\n", cmd)
 		os.Exit(0)
 	}
 	example = os.Args[1]
@@ -37,6 +37,7 @@ func main() {
 			dim = -1
 		}
 		queens.Main(dim)
+
 	case "tsp":
 		tsp.Main()
 

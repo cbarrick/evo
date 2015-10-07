@@ -3,7 +3,7 @@ package graph
 
 import (
 	"math/rand"
-	"strconv"
+	"runtime"
 	"time"
 
 	"github.com/cbarrick/evo"
@@ -19,17 +19,17 @@ import (
 type node struct {
 	val    evo.Genome
 	peers  []*node
+	valc   chan evo.Genome
 	delayc chan time.Duration
-	setval chan evo.Genome
-	getval chan evo.Genome
-	closec chan int
+	closec chan chan struct{}
 }
 
-func (n *node) init() {
+func (n *node) init(val evo.Genome, peers []*node) {
+	n.val = val
+	n.peers = peers
+	n.valc = make(chan evo.Genome)
 	n.delayc = make(chan time.Duration)
-	n.setval = make(chan evo.Genome, 1)
-	n.getval = make(chan evo.Genome)
-	n.closec = make(chan int)
+	n.closec = make(chan chan struct{})
 }
 
 func (n *node) run() {
@@ -37,76 +37,80 @@ func (n *node) run() {
 		delay   time.Duration
 		mate    = time.After(delay)
 		suiters = make([]evo.Genome, len(n.peers))
+		done    = make(chan evo.Genome)
+		nextval = n.val
 	)
+
+	runtime.SetFinalizer(n.val, nil)
+	runtime.SetFinalizer(n.val, func(val evo.Genome) {
+		val.Close()
+	})
 
 	for {
 		select {
 
-		// gat and set the delay
-		case n.delayc <- delay:
 		case delay = <-n.delayc:
 
-		// get underlying genome
-		case n.getval <- n.val:
+		case n.valc <- n.val:
+		case nextval = <-n.valc:
 
-		// set the underlying genome
-		case newval := <-n.setval:
-			if n.val != newval {
-				n.val.Close()
-				n.val = newval
-			}
-			n.setval = make(chan evo.Genome, 1)
-
-		// close channels and underlying genome
-		case x := <-n.closec:
-			close(n.getval)
-			n.val.Close()
-			n.closec <- x
-			return
-
-		// do one iteration
 		case <-mate:
-			mate = nil
-			go func(setval chan evo.Genome) {
+			go func(oldval evo.Genome) {
+				var ok bool
 				for i := range n.peers {
-					suiters[i] = n.peers[i].value()
+					suiters[i], ok = <-n.peers[i].valc
+					if !ok {
+						return
+					}
 				}
-				newval := n.val.Cross(suiters...)
-				setval <- newval
-				mate = time.After(<-n.delayc)
-			}(n.setval)
+				newval := oldval.Cross(suiters...)
+				done <- newval
+			}(n.val)
+
+		case val := <-done:
+			if nextval == n.val {
+				nextval = val
+			} else if val != n.val && val != nextval {
+				val.Close()
+			} else {
+				n.val = nextval
+				runtime.SetFinalizer(n.val, nil)
+				runtime.SetFinalizer(n.val, func(val evo.Genome) {
+					val.Close()
+				})
+			}
+			mate = time.After(delay)
+
+		case ch := <-n.closec:
+			ch <- struct{}{}
+			return
 		}
 	}
 }
 
 // Close stops the main goroutine
 func (n *node) Close() {
-	n.closec <- 1
-	<-n.closec
+	ch := make(chan struct{})
+	n.closec <- ch
+	<-ch
+	close(n.valc)
+	close(n.delayc)
 	close(n.closec)
 }
 
-// Value returns the current underlying value.
+// Value returns the value underlying the node.
 func (n *node) value() (val evo.Genome) {
-	val = <-n.getval
-	if val == nil {
-		return n.val
+	val, ok := <-n.valc
+	if !ok {
+		val = n.val
 	}
 	return val
-}
-
-// SetValue sets the value of the node
-func (n *node) setValue(val evo.Genome) {
-	c := n.setval
-	c <- val
-	<-c
 }
 
 // SetDelay sets a delay between each iteration
 func (n *node) setDelay(d time.Duration) {
 	n.delayc <- d
 }
-
 
 // Graphs
 // -------------------------
@@ -116,13 +120,17 @@ type Graph struct {
 	nodes []node
 }
 
-// View constructs a view of genomes in the graph.
-func (g *Graph) View() evo.View {
-	members := make([]evo.Genome, len(g.nodes))
-	for i := range members {
-		members[i] = g.nodes[i].value()
+// Iter returns an iterator ranging over the values of the population.
+func (g *Graph) Iter() evo.Iterator {
+	return iterate(g)
+}
+
+// Stats returns statistics on the fitness of genomes in the population.
+func (g *Graph) Stats() (s evo.Stats) {
+	for i := g.Iter(); i.Value() != nil; i.Next() {
+		s = s.Insert(i.Value().Fitness())
 	}
-	return evo.NewView(members...)
+	return s
 }
 
 // Close stops the goroutines of all nodes.
@@ -133,23 +141,19 @@ func (g *Graph) Close() {
 }
 
 // Fitness returns the maximum fitness within the graph.
-func (g *Graph) Fitness() (f float64) {
-	v := g.View()
-	f = v.Max().Fitness()
-	v.Close()
-	return f
+func (g *Graph) Fitness() float64 {
+	return g.Stats().Max()
 }
 
-// Cross injects the best genome of the suiter into a random node in the graph.
+// Cross performs a random migration between this graph and a random suiter.
 func (g *Graph) Cross(suiters ...evo.Genome) evo.Genome {
-	// mate by replacing a random node from g
-	// with the best node from a random suiter
-	i := rand.Intn(len(suiters))
-	h := suiters[i].(*Graph)
-	v := h.View()
-	max := v.Max()
-	g.nodes[rand.Intn(len(g.nodes))].setValue(max)
-	v.Close()
+	h := suiters[rand.Intn(len(suiters))].(*Graph)
+	i := rand.Intn(len(g.nodes))
+	j := rand.Intn(len(h.nodes))
+	x := g.nodes[i].value()
+	y := h.nodes[j].value()
+	g.nodes[i].valc <- y
+	h.nodes[j].valc <- x
 	return g
 }
 
@@ -159,6 +163,57 @@ func (g *Graph) SetDelay(d time.Duration) *Graph {
 		g.nodes[i].setDelay(d)
 	}
 	return g
+}
+
+// Iterator
+// -------------------------
+
+type iter struct {
+	sub evo.Iterator
+	idx int
+	g   *Graph
+	val evo.Genome
+}
+
+func iterate(g *Graph) evo.Iterator {
+	var it iter
+	it.idx = 0
+	it.g = g
+	it.val = g.nodes[it.idx].value()
+	if pop, ok := it.val.(evo.Population); ok {
+		it.sub = pop.Iter()
+	}
+	return &it
+}
+
+func (it *iter) Value() evo.Genome {
+	if it.sub != nil {
+		return it.sub.Value()
+	}
+	return it.val
+}
+
+func (it *iter) Next() {
+	switch {
+	case it.sub != nil:
+		it.sub.Next()
+		if it.sub.Value() != nil {
+			break
+		}
+		it.sub = nil
+		fallthrough
+	default:
+		it.idx++
+		if it.idx >= len(it.g.nodes) {
+			it.g = nil
+			it.val = nil
+		} else {
+			it.val = it.g.nodes[it.idx].value()
+			if pop, ok := it.val.(evo.Population); ok {
+				it.sub = pop.Iter()
+			}
+		}
+	}
 }
 
 // Functions
@@ -215,37 +270,16 @@ func Ring(values []evo.Genome) *Graph {
 // `layout[0] == [1,2,3]` then the 0th node will have three peers, namely the
 // 1st, 2nd, and 3rd nodes.
 func Custom(layout [][]int, values []evo.Genome) *Graph {
-
-	// validate the layout
-	size := len(values)
-	if len(layout) != size {
-		panic("invalid layout, len(layout) != len(values)")
-	}
-	for i := range layout {
-		for j := range layout[i] {
-			if layout[i][j] >= size {
-				panic("invalid layout, no such node: " + strconv.Itoa(layout[i][j]))
-			}
-		}
-	}
-
-	// make the graph
 	g := new(Graph)
 	g.nodes = make([]node, len(values))
-
-	// for each node, assign its initial value and peers
-	// and initialize its other members
 	for i := range g.nodes {
-		n := &g.nodes[i]
-		n.val = values[i]
-		n.peers = make([]*node, len(layout[i]))
+		val := values[i]
+		peers := make([]*node, len(layout[i]))
 		for j := range layout[i] {
-			n.peers[j] = &g.nodes[j]
+			peers[j] = &g.nodes[j]
 		}
-		n.init()
+		g.nodes[i].init(val, peers)
 	}
-
-	// start each node's main loop
 	for i := range g.nodes {
 		go g.nodes[i].run()
 	}

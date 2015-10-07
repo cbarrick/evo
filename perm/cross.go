@@ -20,8 +20,7 @@ func sublist(slice []int) (sub []int, left, right int) {
 // OrderX performs order crossover on two parents to create a child.
 // Order crossover is analogous to 1-point crossover repaired for permutations.
 // Order crossover is a very simple crossover technique for permutations.
-func OrderX(mom, dad []int) (child []int) {
-	child = make([]int, len(mom))
+func OrderX(child, mom, dad []int) {
 	sub, left, right := sublist(mom)
 	copy(child[left:right], sub)
 	i, j := right, right
@@ -32,13 +31,11 @@ func OrderX(mom, dad []int) (child []int) {
 		}
 		j = (j + 1) % len(child)
 	}
-	return child
 }
 
 // PMX performs partially mapped crossover on two parents to create a child.
 // PMX is often a good choice for a variety of permutation problems.
-func PMX(mom, dad []int) (child []int) {
-	child = make([]int, len(mom))
+func PMX(child, mom, dad []int) {
 	_, left, right := sublist(mom)
 
 	for i := range child {
@@ -61,14 +58,12 @@ func PMX(mom, dad []int) (child []int) {
 			child[i] = dad[i]
 		}
 	}
-
-	return child
 }
 
 // CycleX performs cycle crossover on two parents to produce a child.
 // Cycle crossover is a good choice when you want the inherited alleals to keep
 // the position inherited from the parents.
-func CycleX(mom, dad []int) (child []int) {
+func CycleX(child, mom, dad []int) {
 	var cycles [][]int
 	taken := make([]bool, len(mom))
 	for i := range mom {
@@ -83,7 +78,6 @@ func CycleX(mom, dad []int) (child []int) {
 		}
 	}
 
-	child = make([]int, len(mom))
 	var who bool
 	for i := range cycles {
 		var parent []int
@@ -99,17 +93,12 @@ func CycleX(mom, dad []int) (child []int) {
 			who = !who
 		}
 	}
-
-	return child
 }
 
 // EdgeX performs edge recombination crossover on two parents to create a child.
-func EdgeX(mom, dad []int) (child []int) {
-	child = make([]int, 0, len(mom))
-	// TODO: uncomment after signature change:
-	// child = child[0:0]
-
+func EdgeX(child, mom, dad []int) {
 	dim := len(mom)
+	child = child[0:0]
 
 	// build the table
 	// doubles are marked by negating the entry
@@ -125,7 +114,7 @@ func EdgeX(mom, dad []int) (child []int) {
 		if j == 0 {
 			mnext = 1
 			mprev = dim - 1
-		} else if j == dim - 1 {
+		} else if j == dim-1 {
 			mnext = 0
 			mprev = dim - 2
 		} else {
@@ -139,7 +128,7 @@ func EdgeX(mom, dad []int) (child []int) {
 		if j == 0 {
 			dnext = 1
 			dprev = dim - 1
-		} else if j == dim - 1 {
+		} else if j == dim-1 {
 			dnext = 0
 			dprev = dim - 2
 		} else {
@@ -217,5 +206,4 @@ func EdgeX(mom, dad []int) (child []int) {
 		clear(next)
 		current = next
 	}
-	return child
 }

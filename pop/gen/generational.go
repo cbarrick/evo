@@ -6,146 +6,166 @@
 package gen
 
 import (
-	"math/rand"
-	"sync"
+	"runtime"
+	"time"
 
 	"github.com/cbarrick/evo"
 )
 
-type population struct {
-	members []evo.Genome
+// Population
+// -------------------------
 
-	com struct {
-		members chan []evo.Genome // read members safely
-		close   chan bool         // stop the generational loop
-		inject  chan evo.Genome   // inject a genome into a random position
-	}
+type population struct {
+	members  []evo.Genome
+	membersc chan []evo.Genome
+	updates  chan evo.Genome
+	migrate  chan chan evo.Genome
+	closec   chan chan struct{}
+	closed   bool
 }
 
-// loop implements the generational loop
-func (p *population) loop() {
-	var inject evo.Genome
+func New(members []evo.Genome) evo.Population {
+	var pop population
+	pop.members = members
+	pop.membersc = make(chan []evo.Genome)
+	pop.updates = make(chan evo.Genome, len(pop.members))
+	pop.migrate = make(chan chan evo.Genome)
+	pop.closec = make(chan chan struct{})
+	go pop.run()
+	return &pop
+}
 
-	next := make([]evo.Genome, len(p.members))
-	ready := make(chan bool)
+func (pop *population) run() {
+	var (
+		delay   time.Duration
+		mate    = time.After(delay)
+		nextgen = make([]evo.Genome, len(pop.members))
+		pos     = 0
+	)
 
-	// mate performs one iteration of the loop,
-	// and sends on the ready channel when done.
-	mate := func(members []evo.Genome) {
-		var wg sync.WaitGroup
-		wg.Add(len(members))
-		for i := range members {
-			go func(i int) {
-				suiters := make([]evo.Genome, len(members)-1)
-				copy(suiters[:i], members[:i])
-				copy(suiters[i:], members[i+1:])
-				next[i] = members[i].Cross(suiters...)
-				wg.Done()
-			}(i)
-		}
-		wg.Wait()
-		ready <- true
+	for i := range pop.members {
+		runtime.SetFinalizer(pop.members[i], nil)
+		runtime.SetFinalizer(pop.members[i], func(val evo.Genome) {
+			val.Close()
+		})
 	}
-
-	// turnover swaps in the next generation
-	// and performs an injection if needed
-	turnover := func() {
-		if inject != nil {
-			i := rand.Intn(len(next))
-			if inject != next[i] {
-				next[i].Close()
-				next[i] = inject
-			}
-			inject = nil
-		}
-		for i := range p.members {
-			if next[i] != p.members[i] {
-				p.members[i].Close()
-			}
-			p.members[i] = nil
-		}
-		p.members, next = next, p.members
-	}
-
-	// start the initial iteration
-	go mate(p.members)
 
 	for {
 		select {
-		// inject a genome into a random position
-		// the injection will occur during the next turnover
-		case inject = <-p.com.inject:
-			break
 
-		// read p.members safely
-		case p.com.members <- p.members:
-			dup := make([]evo.Genome, len(p.members))
-			copy(dup, p.members)
-			p.members = dup
+		case pop.membersc <- pop.members:
+			memcopy := make([]evo.Genome, len(pop.members))
+			copy(memcopy, pop.members)
+			pop.members = memcopy
 
-		// the current iteration is done
-		// turnover and start the next iteration
-		case <-ready:
-			turnover()
-			go mate(p.members)
-
-		// close
-		// wait for the final iteration, turnover, then exit
-		case x := <-p.com.close:
-			if x == true {
-				<-ready
-				turnover()
-				p.com.close <- true
-				close(p.com.members)
-				close(p.com.close)
-				return
+		case <-mate:
+			for i := range pop.members {
+				go func(i int, members []evo.Genome) {
+					pop.updates <- members[i].Cross(members...)
+				}(i, pop.members)
 			}
+
+		case val := <-pop.updates:
+			runtime.SetFinalizer(val, nil)
+			runtime.SetFinalizer(val, func(val evo.Genome) {
+				val.Close()
+			})
+			nextgen[pos] = val
+			pos++
+			if pos == len(nextgen) {
+				pop.members, nextgen = nextgen, pop.members
+				pos = 0
+				mate = time.After(delay)
+			}
+
+		case ch := <-pop.closec:
+			close(pop.membersc)
+			pop.closed = true
+			ch <- struct{}{}
+			return
+
 		}
 	}
 }
 
-// Close stops the main loop.
-func (p *population) Close() {
-	p.com.close <- true
-	<-p.com.close
+// Iter returns an iterator ranging over the values of the population.
+func (pop *population) Iter() evo.Iterator {
+	return iterate(pop)
+}
+
+// Stats returns statistics on the fitness of genomes in the population.
+func (pop *population) Stats() (s evo.Stats) {
+	for i := pop.Iter(); i.Value() != nil; i.Next() {
+		s = s.Insert(i.Value().Fitness())
+	}
+	return s
+}
+
+// Close terminates the evolutionary algorithm.
+func (pop *population) Close() {
+	ch := make(chan struct{})
+	pop.closec <- ch
+	<-ch
 	return
 }
 
-// View constructs a view of genomes in the population.
-func (p *population) View() evo.View {
-	members := <-p.com.members
-	if members == nil {
-		members = make([]evo.Genome, len(p.members))
-		copy(members, p.members)
-	}
-	return evo.NewView(members...)
-}
-
 // Fitness returns the maximum fitness within the population.
-func (p *population) Fitness() (f float64) {
-	v := p.View()
-	f = v.Max().Fitness()
-	v.Recycle()
-	return f
+func (pop *population) Fitness() float64 {
+	return pop.Stats().Max()
 }
 
-// Cross injects the best genome of a random suiter into a random slot in the
-// population.
-func (p *population) Cross(suiters ...evo.Genome) evo.Genome {
-	q := suiters[rand.Intn(len(suiters))].(*population)
-	v := q.View()
-	p.com.inject <- v.Max()
-	v.Recycle()
-	return p
+// Cross performs a random migration between this population and a random suiter.
+func (pop *population) Cross(suiters ...evo.Genome) evo.Genome {
+	panic("Cross not yet implemented on generational populations")
 }
 
-// New starts a new generational genetic algorithm with the given members.
-func New(members ...evo.Genome) evo.Population {
-	var p population
-	p.members = members
-	p.com.members = make(chan []evo.Genome)
-	p.com.close = make(chan bool)
-	p.com.inject = make(chan evo.Genome)
-	go p.loop()
-	return &p
+// Iterator
+// -------------------------
+
+type iter struct {
+	sub  evo.Iterator
+	idx  int
+	vals []evo.Genome
+}
+
+func iterate(pop *population) evo.Iterator {
+	var it iter
+	if vals, ok := <-pop.membersc; ok {
+		it.vals = vals
+	} else {
+		it.vals = pop.members
+	}
+	if pop, ok := it.vals[it.idx].(evo.Population); ok {
+		it.sub = pop.Iter()
+	}
+	return &it
+}
+
+func (it *iter) Value() evo.Genome {
+	if it.sub != nil {
+		return it.sub.Value()
+	}
+	if it.idx == len(it.vals) {
+		return nil
+	}
+	return it.vals[it.idx]
+}
+
+func (it *iter) Next() {
+	switch {
+	case it.sub != nil:
+		it.sub.Next()
+		if it.sub.Value() != nil {
+			break
+		}
+		it.sub = nil
+		fallthrough
+	default:
+		it.idx++
+		if it.idx < len(it.vals) {
+			if pop, ok := it.vals[it.idx].(evo.Population); ok {
+				it.sub = pop.Iter()
+			}
+		}
+	}
 }

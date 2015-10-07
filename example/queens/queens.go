@@ -14,16 +14,17 @@ import (
 
 // Count counts the number of fitness evaluations.
 // It is syncronised because fitness evaluations may happen in parrallel.
-var count struct{
+var count struct {
 	sync.RWMutex
 	val int
 }
 
 // The queens type is our genome type
 type queens struct {
-	gene    []int     // permutation representation of n-queens
-	fitness float64   // cache of the fitness
-	once    sync.Once // used to sync fitness computations
+	gene    []int      // permutation representation of n-queens
+	fitness float64    // cache of the fitness
+	once    sync.Once  // used to sync fitness computations
+	pool    *sync.Pool // used to recycle genes
 }
 
 // String produces the gene contents and fitness.
@@ -34,7 +35,10 @@ func (q *queens) String() string {
 
 // The genome does not use the close method.
 // This could be used to implement genome recycling and reduce allocation.
-func (q *queens) Close() {}
+func (q *queens) Close() {
+	q.pool.Put(q.gene)
+	q.gene = nil
+}
 
 // Fitness returns the negative count of conflicts.
 // The value is cached so the computation only occurs once.
@@ -71,13 +75,14 @@ func (q *queens) Cross(matingPool ...evo.Genome) evo.Genome {
 
 	// Selection:
 	// Select each parent using a simple random binary tournament
-	mom := evo.BinaryTournament(matingPool...).(*queens)
+	// mom := evo.BinaryTournament(matingPool...).(*queens)
+	mom := q
 	dad := evo.BinaryTournament(matingPool...).(*queens)
 
 	// Crossover:
-	// Cycle crossover
-	// We randomly decide who is the first and second parent
-	child := &queens{gene: perm.CycleX(mom.gene, dad.gene)}
+	// Partially mapped crossover
+	child := &queens{gene: mom.pool.Get().([]int), pool: mom.pool}
+	perm.PMX(child.gene, mom.gene, dad.gene)
 
 	// Mutation:
 	// Perform n random swaps where n is taken from an exponential distribution
@@ -109,36 +114,43 @@ func Main(dim int) {
 	// tunables
 	var (
 		pop   evo.Population
-		size  = dim * 2         // the size of the population
-		isl   = 8               // the number of islands
-		delay = 1 * time.Second // delay between island communication
+		size  = dim * 2              // the size of the population
+		isl   = 8                    // the number of islands
+		delay = 1 * time.Millisecond // delay between island communication
 	)
 
 	fmt.Printf("queens: dimension=%d population=%d\n", dim, size)
 
+	// pool of genes. lets us reuse genes, reducing allocation costs
+	pool := sync.Pool{
+		New: func() interface{} {
+			return make([]int, dim)
+		},
+	}
+
 	// random initial population
 	init := make([]evo.Genome, size)
 	for i := range init {
-		init[i] = &queens{gene: rand.Perm(dim)}
+		init[i] = &queens{gene: rand.Perm(dim), pool: &pool}
 	}
 
 	// construct the population
-	isleSize := size/isl
+	isleSize := size / isl
 	islands := make([]evo.Genome, isl)
 	for i := range islands {
-		islands[i] = graph.Hypercube(init[i*isleSize:(i+1)*isleSize])
+		islands[i] = graph.Hypercube(init[i*isleSize : (i+1)*isleSize])
 	}
-	pop = graph.Ring(islands).SetDelay(delay)
+	pop = graph.Grid(islands).SetDelay(delay)
 
 	// prints summary stats
 	// "\x1b[2K" is the escape code to clear the line
-	print := func(v evo.View) {
+	print := func(stats evo.Stats) {
 		count.RLock()
 		fmt.Printf("\x1b[2K\rCount: %d | Max: %d | Min: %d | SD: %f",
 			count.val,
-			int(v.Max().Fitness()),
-			int(v.Min().Fitness()),
-			v.StdDeviation())
+			int(stats.Max()),
+			int(stats.Min()),
+			stats.StdDeviation())
 		count.RUnlock()
 	}
 
@@ -146,25 +158,27 @@ func Main(dim int) {
 	// continuously query the population for stats and print them
 	// kill the population when done
 	for {
-		view := pop.View()
-		print(view)
+		stats := pop.Stats()
+		print(stats)
 
 		// stop when fitness is 0
 		// or we count 1 million fitness computations
 		count.RLock()
-		if view.Max().Fitness() == 0 || count.val >= 1e6 {
-			fmt.Printf("\nSolution: %v\n", view.Max())
-			count.RUnlock()
-			view.Close()
+		if stats.Max() == 0 || count.val >= 1e6 {
 			pop.Close()
+			fmt.Println()
+			for i := pop.Iter(); i.Value() != nil; i.Next() {
+				if i.Value().Fitness() == 0 {
+					fmt.Println(i.Value())
+					break
+				}
+			}
+			count.RUnlock()
 			return
 		}
 		count.RUnlock()
 
-		// recycling the view reduces allocation cost of creating the next view
-		view.Close()
-
 		// sleep before next poll
-		<-time.After(500 * time.Millisecond)
+		<-time.After(100 * time.Millisecond)
 	}
 }
