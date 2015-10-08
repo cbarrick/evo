@@ -4,28 +4,17 @@ import (
 	"math/rand"
 )
 
-// Sublist takes a slice and returns a random subslice along with the boundaries.
-func sublist(slice []int) (sub []int, left, right int) {
-	left = rand.Intn(len(slice) - 1)
-	right = left
-	for right == left {
-		right = rand.Intn(len(slice))
-	}
-	if right < left {
-		left, right = right, left
-	}
-	return slice[left:right], left, right
-}
-
-// OrderX performs order crossover on two parents to create a child.
-// Order crossover is analogous to 1-point crossover repaired for permutations.
-// Order crossover is a very simple crossover technique for permutations.
+// OrderX performs order crossover. Order crossover is a good choice when you
+// want to inherit the relative order of values.
 func OrderX(child, mom, dad []int) {
-	sub, left, right := sublist(mom)
+	if rand.Float64() < 0.5 {
+		mom, dad = dad, mom
+	}
+	sub, left, right := RandSlice(mom)
 	copy(child[left:right], sub)
 	i, j := right, right
 	for i < left || right <= i {
-		if search(sub, dad[j]) == -1 {
+		if Search(sub, dad[j]) == -1 {
 			child[i] = dad[j]
 			i = (i + 1) % len(child)
 		}
@@ -33,10 +22,14 @@ func OrderX(child, mom, dad []int) {
 	}
 }
 
-// PMX performs partially mapped crossover on two parents to create a child.
-// PMX is often a good choice for a variety of permutation problems.
+// PMX performs partially mapped crossover. PMX inherits a random slice of one
+// parent. The position of the other values is more random when there is greater
+// difference between the parents.
 func PMX(child, mom, dad []int) {
-	_, left, right := sublist(mom)
+	if rand.Float64() < 0.5 {
+		mom, dad = dad, mom
+	}
+	_, left, right := RandSlice(mom)
 
 	for i := range child {
 		child[i] = -1
@@ -44,10 +37,10 @@ func PMX(child, mom, dad []int) {
 	copy(child[left:right], mom[left:right])
 
 	for i := left; i < right; i++ {
-		if search(child, dad[i]) == -1 {
+		if Search(child, dad[i]) == -1 {
 			j := i
 			for left <= j && j < right {
-				j = search(dad, mom[j])
+				j = Search(dad, mom[j])
 			}
 			child[j] = dad[i]
 		}
@@ -60,10 +53,12 @@ func PMX(child, mom, dad []int) {
 	}
 }
 
-// CycleX performs cycle crossover on two parents to produce a child.
-// Cycle crossover is a good choice when you want the inherited alleals to keep
-// the position inherited from the parents.
+// CycleX performs cycle crossover. Cycle crossover is a good choice when you
+// want to inherit the absolute position of values.
 func CycleX(child, mom, dad []int) {
+	if rand.Float64() < 0.5 {
+		mom, dad = dad, mom
+	}
 	var cycles [][]int
 	taken := make([]bool, len(mom))
 	for i := range mom {
@@ -72,7 +67,7 @@ func CycleX(child, mom, dad []int) {
 			for j := i; !taken[j]; {
 				taken[j] = true
 				cycle = append(cycle, j)
-				j = search(mom, dad[j])
+				j = Search(mom, dad[j])
 			}
 			cycles = append(cycles, cycle)
 		}
@@ -95,10 +90,15 @@ func CycleX(child, mom, dad []int) {
 	}
 }
 
-// EdgeX performs edge recombination crossover on two parents to create a child.
+// EdgeX performs edge recombination. Edge recombination is a good choice when
+// you want to inherit adjacency information.
 func EdgeX(child, mom, dad []int) {
 	dim := len(mom)
 	child = child[0:0]
+
+	if rand.Float64() < 0.5 {
+		mom, dad = dad, mom
+	}
 
 	// build the table
 	// doubles are marked by negating the entry
@@ -110,7 +110,7 @@ func EdgeX(child, mom, dad []int) {
 		var j int
 
 		var mnext, mprev int
-		j = search(mom, i)
+		j = Search(mom, i)
 		if j == 0 {
 			mnext = 1
 			mprev = dim - 1
@@ -124,7 +124,7 @@ func EdgeX(child, mom, dad []int) {
 		table[i] = append(table[i], mom[mnext], mom[mprev])
 
 		var dnext, dprev int
-		j = search(dad, i)
+		j = Search(dad, i)
 		if j == 0 {
 			dnext = 1
 			dprev = dim - 1
@@ -155,8 +155,8 @@ func EdgeX(child, mom, dad []int) {
 	clear := func(x int) {
 		for i := range table {
 			newrow := table[i][0:0]
-			pos := search(table[i], x)
-			neg := search(table[i], -x)
+			pos := Search(table[i], x)
+			neg := Search(table[i], -x)
 			for j := range table[i] {
 				if j != pos && j != neg {
 					newrow = append(newrow, table[i][j])
@@ -177,12 +177,12 @@ func EdgeX(child, mom, dad []int) {
 		row := table[current]
 		if len(row) == 0 {
 			if !reversed {
-				reverse(child)
+				Reverse(child)
 				reversed = true
 				current = child[len(child)-1]
 				continue
 			} else {
-				for next == -1 || search(child, next) != -1 {
+				for next == -1 || Search(child, next) != -1 {
 					next = rand.Intn(len(table))
 				}
 			}
