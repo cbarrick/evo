@@ -1,4 +1,9 @@
-// Package graph needs documentation
+// Package graph provides a spatial population for diffusion and island models.
+//
+// Graph populations map genomes to nodes in a graph. Each node is evolved in
+// parallel, and only sees neighboring nodes as suitors. When used as a
+// meta-population, this technique is known as the island model. When used as a
+// regular population, it is known as the diffusion model.
 package graph
 
 import (
@@ -12,10 +17,9 @@ import (
 // Nodes
 // -------------------------
 
-// Nodes wrap a genome and are aggregated to form a graph of genomes.
-// A node manages the lifecycle of one slot in a population concurrently with
-// all other nodes in the graph. The underlying genome is only allowed to mate
-// with genomes from adjacent nodes.
+// Node wraps a genome and manages the lifecycle of one slot in a population.
+// Nodes evolve their underlying genome concurrently with all other nodes in a
+// graph. The underlying genome takes suitors from adjacent nodes.
 type node struct {
 	val    evo.Genome
 	peers  []*node
@@ -88,7 +92,7 @@ func (n *node) run() {
 	}
 }
 
-// Close stops the main goroutine
+// Close stops the node from evolving it's genome.
 func (n *node) Close() {
 	ch := make(chan struct{})
 	n.closec <- ch
@@ -98,8 +102,8 @@ func (n *node) Close() {
 	close(n.closec)
 }
 
-// Value returns the value underlying the node.
-func (n *node) value() (val evo.Genome) {
+// Value returns the genome underlying the node.
+func (n *node) Value() (val evo.Genome) {
 	val, ok := <-n.valc
 	if !ok {
 		val = n.val
@@ -107,25 +111,23 @@ func (n *node) value() (val evo.Genome) {
 	return val
 }
 
-// SetDelay sets a delay between each iteration
-func (n *node) setDelay(d time.Duration) {
+// SetDelay sets a delay between each evolution.
+func (n *node) SetDelay(d time.Duration) {
 	n.delayc <- d
 }
 
 // Graphs
 // -------------------------
 
-// Graphs aggregate nodes into a population.
+// Warning: this type will become private before v0.1.0
 type Graph struct {
 	nodes []node
 }
 
-// Iter returns an iterator ranging over the values of the population.
 func (g *Graph) Iter() evo.Iterator {
 	return iterate(g)
 }
 
-// Stats returns statistics on the fitness of genomes in the population.
 func (g *Graph) Stats() (s evo.Stats) {
 	for i := g.Iter(); i.Value() != nil; i.Next() {
 		s = s.Insert(i.Value().Fitness())
@@ -133,34 +135,30 @@ func (g *Graph) Stats() (s evo.Stats) {
 	return s
 }
 
-// Close stops the goroutines of all nodes.
 func (g *Graph) Close() {
 	for i := range g.nodes {
 		g.nodes[i].Close()
 	}
 }
 
-// Fitness returns the maximum fitness within the graph.
 func (g *Graph) Fitness() float64 {
 	return g.Stats().Max()
 }
 
-// Evolve performs a random migration between this graph and a random suiter.
 func (g *Graph) Evolve(suiters ...evo.Genome) evo.Genome {
 	h := suiters[rand.Intn(len(suiters))].(*Graph)
 	i := rand.Intn(len(g.nodes))
 	j := rand.Intn(len(h.nodes))
-	x := g.nodes[i].value()
-	y := h.nodes[j].value()
+	x := g.nodes[i].Value()
+	y := h.nodes[j].Value()
 	g.nodes[i].valc <- y
 	h.nodes[j].valc <- x
 	return g
 }
 
-// SetDelay sets a delay between each iteration of each node
 func (g *Graph) SetDelay(d time.Duration) *Graph {
 	for i := range g.nodes {
-		g.nodes[i].setDelay(d)
+		g.nodes[i].SetDelay(d)
 	}
 	return g
 }
@@ -179,7 +177,7 @@ func iterate(g *Graph) evo.Iterator {
 	var it iter
 	it.idx = 0
 	it.g = g
-	it.val = g.nodes[it.idx].value()
+	it.val = g.nodes[it.idx].Value()
 	if pop, ok := it.val.(evo.Population); ok {
 		it.sub = pop.Iter()
 	}
@@ -208,7 +206,7 @@ func (it *iter) Next() {
 			it.g = nil
 			it.val = nil
 		} else {
-			it.val = it.g.nodes[it.idx].value()
+			it.val = it.g.nodes[it.idx].Value()
 			if pop, ok := it.val.(evo.Population); ok {
 				it.sub = pop.Iter()
 			}
@@ -219,13 +217,12 @@ func (it *iter) Next() {
 // Functions
 // -------------------------
 
-// New creates a new diffusion population with a layout chosen by the system.
-// Currently, the hypercube layout is always used.
+// New creates a new graph population. No particular layout is guarenteed.
 func New(values []evo.Genome) *Graph {
 	return Hypercube(values)
 }
 
-// Grid creates a new diffusion population arranged in a 2D grid.
+// Grid creates a new graph population arranged as a 2D grid.
 func Grid(values []evo.Genome) *Graph {
 	offset := len(values) / 2
 	layout := make([][]int, len(values))
@@ -239,7 +236,7 @@ func Grid(values []evo.Genome) *Graph {
 	return Custom(layout, values)
 }
 
-// Hypercube creates a new diffusion population arranged in a hypercube graph.
+// Hypercube creates a new graph population arranged as a hypercube.
 func Hypercube(values []evo.Genome) *Graph {
 	var dimension uint
 	for dimension = 0; len(values) > (1 << dimension); dimension++ {
@@ -254,7 +251,7 @@ func Hypercube(values []evo.Genome) *Graph {
 	return Custom(layout, values)
 }
 
-// Ring creates a new diffusion population arranged in a ring.
+// Ring creates a new graph population arranged as a ring.
 func Ring(values []evo.Genome) *Graph {
 	layout := make([][]int, len(values))
 	for i := range values {
@@ -265,9 +262,9 @@ func Ring(values []evo.Genome) *Graph {
 	return Custom(layout, values)
 }
 
-// Custom creates a new diffusion population with a custom layout.
+// Custom creates a new graph population with a custom layout.
 // The layout is specified as an adjacency list in terms of position, e.g. if
-// `layout[0] == [1,2,3]` then the 0th node will have three peers, namely the
+// layout[0] == [1,2,3] then the 0th node will have three peers, namely the
 // 1st, 2nd, and 3rd nodes.
 func Custom(layout [][]int, values []evo.Genome) *Graph {
 	g := new(Graph)

@@ -243,8 +243,8 @@ func Main() {
 
 	// tunables
 	var (
-		pop   evo.Population
-		size  = dim * 5 // the size of the population
+		pop  evo.Population
+		size = dim * 5 // the size of the population
 	)
 
 	fmt.Printf("tsp: dimension=%d population=%d\n", dim, size)

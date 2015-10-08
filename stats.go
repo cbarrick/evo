@@ -5,7 +5,9 @@ import (
 	"math"
 )
 
-// A Stats object is a statistics collector
+// A Stats object is a statistics collector. A common source of Stats objects is
+// the return value of Population.Stats() which gives statistics about the
+// fitness of genomes in the population.
 type Stats struct {
 	max, min float64
 	mean     float64
@@ -13,7 +15,7 @@ type Stats struct {
 	len      float64
 }
 
-// Insert inserts a value into the statistics.
+// Insert inserts a new value into the data.
 func (s Stats) Insert(x float64) Stats {
 	if s.len == 0 {
 		s.max = math.Inf(-1)
@@ -39,7 +41,7 @@ func (s Stats) Insert(x float64) Stats {
 	return s
 }
 
-// TODO: Document
+// Merge merges the data of two Stats objects.
 func (s Stats) Merge(t Stats) Stats {
 	if s.len == 0 {
 		s.max = math.Inf(-1)
@@ -66,37 +68,37 @@ func (s Stats) Merge(t Stats) Stats {
 	return s
 }
 
-// Max returns the maximum fitness.
+// Max returns the maximum data point.
 func (s Stats) Max() float64 {
 	return s.max
 }
 
-// Min returns the minimum fitness.
+// Min returns the minimum data point.
 func (s Stats) Min() float64 {
 	return s.min
 }
 
-// Range returns the difference in the maximum and minimum fitness.
+// Range returns the difference in the maximum and minimum data points.
 func (s Stats) Range() float64 {
 	return s.max - s.min
 }
 
-// Mean returns the average fitness.
+// Mean returns the average of the data.
 func (s Stats) Mean() float64 {
 	return s.mean
 }
 
-// Variance returns the population variance of fitness.
+// Variance returns the population variance of the data.
 func (s Stats) Variance() float64 {
 	return s.sumsq / s.len
 }
 
-// StdDeviation returns the population standard deviation of fitness.
+// StdDeviation returns the population standard deviation of the data.
 func (s Stats) StdDeviation() float64 {
 	return math.Sqrt(s.sumsq / s.len)
 }
 
-// Len returns the size of the population.
+// Len returns the size of the data.
 func (s Stats) Len() int {
 	return int(s.len)
 }

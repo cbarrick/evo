@@ -4,19 +4,22 @@ import (
 	"math/rand"
 )
 
-func BinaryTournament(suiters ...Genome) Genome {
-	var x, y int
-	if len(suiters) > 2 {
-		x = rand.Intn(len(suiters))
+// BinaryTournament randomly selects two suitors and returns the one with the
+// highest fitness.
+func BinaryTournament(suitors ...Genome) Genome {
+	var x, y, size int
+	size = len(suitors)
+	if size > 2 {
+		x = rand.Intn(size)
 		y = x
 		for y == x {
-			y = rand.Intn(len(suiters))
+			y = rand.Intn(size)
 		}
 	} else {
 		x, y = 0, 1
 	}
-	if suiters[x].Fitness() < suiters[y].Fitness() {
-		return suiters[y]
+	if suitors[x].Fitness() < suitors[y].Fitness() {
+		return suitors[y]
 	}
-	return suiters[x]
+	return suitors[x]
 }

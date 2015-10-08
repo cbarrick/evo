@@ -1,8 +1,10 @@
-// Package gen implements a generational population.
+// Package gen provides a traditional generational population.
 //
-// Generational populations are used to implement OG genetic algorithms. Each
-// successive generation is created in its entirety before starting the next
-// generation.
+// Generational populations evolve their genomes in generations. Each genome
+// is given the entire population as suitors to evolve the next generation. Once
+// the new generation is constructed, the old generation is replaced. Each
+// genome is evolved in parallel, similar to the textbook master-slave
+// parallelism.
 package gen
 
 import (
@@ -24,15 +26,12 @@ type population struct {
 	closed   bool
 }
 
-func New(members []evo.Genome) evo.Population {
-	var pop population
+func (pop *population) init(members []evo.Genome) {
 	pop.members = members
 	pop.membersc = make(chan []evo.Genome)
 	pop.updates = make(chan evo.Genome, len(pop.members))
 	pop.migrate = make(chan chan evo.Genome)
 	pop.closec = make(chan chan struct{})
-	go pop.run()
-	return &pop
 }
 
 func (pop *population) run() {
@@ -74,6 +73,9 @@ func (pop *population) run() {
 			pos++
 			if pos == len(nextgen) {
 				pop.members, nextgen = nextgen, pop.members
+				for i := range nextgen {
+					nextgen[i] = nil
+				}
 				pos = 0
 				mate = time.After(delay)
 			}
@@ -168,4 +170,12 @@ func (it *iter) Next() {
 			}
 		}
 	}
+}
+
+// New returns a generational population initially containing the given members.
+func New(members []evo.Genome) evo.Population {
+	pop := new(population)
+	pop.init(members)
+	go pop.run()
+	return pop
 }
