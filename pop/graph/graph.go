@@ -224,14 +224,14 @@ func New(values []evo.Genome) *Graph {
 
 // Grid creates a new graph population arranged as a 2D grid.
 func Grid(values []evo.Genome) *Graph {
-	offset := len(values) / 2
+	width := len(values) << 1
 	layout := make([][]int, len(values))
-	for i := range values {
+	for i := range layout {
 		layout[i] = make([]int, 4)
-		layout[i][0] = ((i + 1) + len(values)) % len(values)
-		layout[i][1] = ((i - 1) + len(values)) % len(values)
-		layout[i][2] = ((i + offset) + len(values)) % len(values)
-		layout[i][3] = ((i - offset) + len(values)) % len(values)
+		layout[i][0] = (i + 1 + len(values)) % len(values)
+		layout[i][1] = (i - 1 + len(values)) % len(values)
+		layout[i][2] = (i + width + len(values)) % len(values)
+		layout[i][3] = (i - width + len(values)) % len(values)
 	}
 	return Custom(layout, values)
 }
