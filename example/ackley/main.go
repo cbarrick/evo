@@ -1,20 +1,52 @@
-// The ackley example is currently unmaintained.
-//
-// It will be updates to demonstrate an "evolution strategy" approach sometime
-// in the future.
 package main
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/pop/gen"
+	"github.com/cbarrick/evo/real"
+	"github.com/cbarrick/evo/sel"
+)
+
+// Tuneables
+const (
+	dim       = 30   // Dimension of the problem.
+	bounds    = 30   // Bounds of object parameters.
+	precision = 1e-6 // Desired precision.
+
+	// Max run time.
+	timeout = 100 * time.Second
+)
+
+// Global objects
+var (
+	selector sel.Elite // Replacement selection pool.
+
+	// The free-list used to recycle memory
+	vectors = sync.Pool{
+		New: func() interface{} {
+			return make(real.Vector, dim)
+		},
+	}
 )
 
 type ackley struct {
-	gene []float64
+	gene  real.Vector
+	steps real.Vector
+}
+
+func (ack *ackley) Close() {
+	vectors.Put(ack.gene)
+	vectors.Put(ack.steps)
+}
+
+func (ack *ackley) String() string {
+	return fmt.Sprint(ack.Fitness())
 }
 
 func (ack *ackley) Fitness() (f float64) {
@@ -22,8 +54,8 @@ func (ack *ackley) Fitness() (f float64) {
 	a = 20
 	b = 0.2
 
-	var sum1, sum2, n float64
-	n = float64(len(ack.gene))
+	var sum1, sum2 float64
+	n := float64(dim)
 	for _, x := range ack.gene {
 		sum1 += x * x
 		sum2 += math.Cos(2 * math.Pi * x)
@@ -38,78 +70,102 @@ func (ack *ackley) Fitness() (f float64) {
 	return f
 }
 
-func (mom *ackley) Cross(suiters ...evo.Genome) evo.Genome {
-	perm := rand.Perm(len(suiters))
-	dad := evo.Tournament(suiters[perm[0]], suiters[perm[1]]).(*ackley)
+func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
+	// Replacement: (40,280)
+	// Evolve is called in parallel for each of the 40 members of the population.
+	// Since we want to generate 280 children, we generate 7 children per call.
+	for i := 0; i < 7; i++ {
 
-	split := rand.Intn(len(mom.gene))
-	child := new(ackley)
-	child.gene = make([]float64, 0, len(mom.gene))
-	child.gene = append(child.gene, mom.gene[:split]...)
-	child.gene = append(child.gene, dad.gene[split:]...)
+		// Creation:
+		// We create the child genome from recycled memory as best we can.
+		var child ackley
+		child.gene = vectors.Get().(real.Vector)
+		child.steps = vectors.Get().(real.Vector)
 
-	i := rand.Intn(len(child.gene))
-	child.gene[i] += rand.NormFloat64()
+		// Crossover:
+		// Select two parents at random.
+		// Uniform crossover of object vars.
+		// Arithmetic crossover of strategy vars
+		mom := suitors[rand.Intn(len(suitors))].(*ackley)
+		dad := suitors[rand.Intn(len(suitors))].(*ackley)
+		real.UniformX(child.gene, mom.gene, dad.gene)
+		real.ArithX(1, child.steps, mom.steps, dad.steps)
 
-	if child.Fitness() >= mom.Fitness() {
-		return child
-	} else {
-		return mom
+		// Mutation:
+		// Lognormal scaling of strategy vars
+		// Gausian perturbation of object vars
+		child.steps.Adapt()
+		child.steps.LowPass(precision)
+		child.gene.Step(child.steps)
+		child.gene.HighPass(bounds)
+		child.gene.LowPass(-bounds)
+
+		// Replacement: (40,280)
+		// Each child is added to a selection pool, defined globally.
+		// After all children are generated, we return one child from the pool.
+		// selector.Get() may block until enough children have been put.
+		selector.Put(&child)
 	}
-}
-
-func (_ *ackley) Close() {}
-
-func Random(dim int) (ack *ackley) {
-	ack = new(ackley)
-	ack.gene = make([]float64, dim)
-	for i := 0; i < dim; i++ {
-		ack.gene[i] = rand.Float64()*2*32.768 - 32.768
-	}
-	return ack
+	return selector.Get()
 }
 
 func main() {
-	var (
-		size      = 32
-		dim       = 16
-		accuracy  = 0.001
-		deviation float64
-	)
+	// Replacement: (40,280)
+	// Each of 40 members of the population generate 7 children and add them to
+	// this pool. This pool returns to each position a different one of the top
+	// 40 members out of the 280 that were added.
+	selector = sel.NewElite(40, 280)
 
-	fmt.Printf("ackley: dimension=%d population=%d accuracy=%g\n", dim, size, accuracy)
-
-	// random initial population
-	// each gene is in the range [-32.768, +32.768).
-	acks := make([]evo.Genome, size)
-	for i := range acks {
-		acks[i] = Random(dim)
+	// Setup:
+	// We initialize a set of 40 random solutions,
+	// then add them to a generational population.
+	init := make([]evo.Genome, 40)
+	for i := range init {
+		init[i] = &ackley{
+			gene:  real.Random(dim, 30),
+			steps: real.Random(dim, 1),
+		}
 	}
-	population := gen.New(acks...)
+	pop := gen.New(init)
 
-	// update sets the deviation variable and prints a summary to the terminal
-	// the string "\x1b[2K" is the escape code to clear the line
-	update := func() {
-		view := population.View()
-		deviation = view.StdDeviation()
-		fmt.Printf("\x1b[2K\r%v", view)
-		view.Recycle()
+	// Termination:
+	// Stop when we reach the desired precision or after the timeout.
+	timer := time.After(timeout)
+	defer func() {
+		pop.Close()
+		selector.Close()
+		best := Max(pop)
+		fmt.Println("\nSolution:", best)
+	}()
+	for {
+		select {
+		case <-timer:
+			return
+		default:
+			stats := pop.Stats()
+			// "\x1b[2K" is the escape code to clear the line
+			fmt.Printf("\x1b[2K\rMax: %f | Min: %f | SD: %f",
+				stats.Max(),
+				stats.Min(),
+				stats.StdDeviation())
+			if stats.StdDeviation() < precision {
+				return
+			}
+		}
 	}
+}
 
-	// the global maximum fitness is known to be 0 when all variables are 0
-	// run the GA until the population converges to the given degree of accuracy
-	update()
-	for deviation > accuracy {
-		update()
+// TODO: put this somewhere in the library
+func Max(pop evo.Population) evo.Genome {
+	var val, best evo.Genome
+	var fit, bestfit = float64(0), math.Inf(-1)
+	for i := pop.Iter(); i.Value() != nil; i.Next() {
+		val = i.Value()
+		fit = val.Fitness()
+		if fit > bestfit {
+			best = val
+			bestfit = fit
+		}
 	}
-	population.Close()
-	update()
-	fmt.Println()
-
-	// print the final population
-	fmt.Println("Solution:")
-	view := population.View()
-	fmt.Println(view.Max())
-	view.Recycle()
-	fmt.Println()
+	return best
 }
