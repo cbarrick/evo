@@ -10,6 +10,7 @@ import (
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
 	"github.com/cbarrick/evo/pop/gen"
+	"github.com/cbarrick/evo/sel"
 )
 
 // Best is the shortest known tour for the cities below.
@@ -211,8 +212,8 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 
 	// Selection:
 	// Select each parent using a simple random binary tournament
-	mom := evo.BinaryTournament(matingPool...).(*tsp)
-	dad := evo.BinaryTournament(matingPool...).(*tsp)
+	mom := sel.BinaryTournament(matingPool...).(*tsp)
+	dad := sel.BinaryTournament(matingPool...).(*tsp)
 
 	// Crossover:
 	// Edge recombination

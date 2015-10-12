@@ -10,6 +10,7 @@ import (
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
 	"github.com/cbarrick/evo/pop/graph"
+	"github.com/cbarrick/evo/sel"
 )
 
 // Count counts the number of fitness evaluations.
@@ -75,9 +76,8 @@ func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
 
 	// Selection:
 	// Select each parent using a simple random binary tournament
-	// mom := evo.BinaryTournament(matingPool...).(*queens)
 	mom := q
-	dad := evo.BinaryTournament(matingPool...).(*queens)
+	dad := sel.BinaryTournament(matingPool...).(*queens)
 
 	// Crossover:
 	// Partially mapped crossover
