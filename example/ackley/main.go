@@ -25,9 +25,12 @@ const (
 
 // Global objects
 var (
-	selector sel.Elite // Replacement selection pool.
+	// Each of the 40 members of the population generates 7 children and adds
+	// them to this pool. This pool returns to each member a different one of
+	// most fit to be their replacement in the next generation.
+	selector = sel.ElitePool(40, 280)
 
-	// The free-list used to recycle memory
+	// A free-list used to recycle memory.
 	vectors = sync.Pool{
 		New: func() interface{} {
 			return make(real.Vector, dim)
@@ -110,12 +113,6 @@ func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 }
 
 func main() {
-	// Replacement: (40,280)
-	// Each of 40 members of the population generate 7 children and add them to
-	// this pool. This pool returns to each position a different one of the top
-	// 40 members out of the 280 that were added.
-	selector = sel.NewElite(40, 280)
-
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.
@@ -134,8 +131,7 @@ func main() {
 	defer func() {
 		pop.Close()
 		selector.Close()
-		best := Max(pop)
-		fmt.Println("\nSolution:", best)
+		fmt.Println("\nSolution:", Max(pop))
 	}()
 	for {
 		select {
