@@ -7,19 +7,21 @@ import (
 	"github.com/cbarrick/evo"
 )
 
-func Tournament(genomes ...evo.Genome) (best evo.Genome) {
+// Tournament returns the most fit suitor.
+func Tournament(suitors ...evo.Genome) (best evo.Genome) {
 	var fit, bestfit float64
 	bestfit = math.Inf(-1)
-	for i := range genomes {
-		fit = genomes[i].Fitness()
+	for i := range suitors {
+		fit = suitors[i].Fitness()
 		if fit > bestfit {
 			bestfit = fit
-			best = genomes[i]
+			best = suitors[i]
 		}
 	}
 	return best
 }
 
+// BinaryTournament randomly chooses two suitors and returns the most fit.
 func BinaryTournament(suitors ...evo.Genome) evo.Genome {
 	var x, y, size int
 	size = len(suitors)
