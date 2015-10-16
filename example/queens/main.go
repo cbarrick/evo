@@ -1,9 +1,11 @@
-package queens
+package main
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -106,8 +108,15 @@ func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
 // We construct an island model population where each island is a diffusion
 // population. The islands are arranged in a ring, and the nodes of each
 // diffusion population are arranged in a hypercube.
-func Main(dim int) {
-	if dim <= 0 {
+func main() {
+	var dim int
+	if len(os.Args) > 2 {
+		var err error
+		dim, err = strconv.Atoi(os.Args[2])
+		if err != nil {
+			panic(err.Error())
+		}
+	} else {
 		dim = 256
 	}
 

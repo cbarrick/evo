@@ -1,4 +1,4 @@
-package tsp
+package main
 
 import (
 	"fmt"
@@ -239,7 +239,7 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 // We construct an island model population where each island is a diffusion
 // population. The islands are arranged in a ring, and the nodes of each
 // diffusion population are arranged in a hypercube.
-func Main() {
+func main() {
 	dim := len(cities)
 
 	// tunables
