@@ -39,7 +39,7 @@ func (pool rrcomps) tourney(rounds int) {
 		winners = make(chan int)       // communicates the winners
 	)
 
-	if size % 2 != 0 {
+	if size%2 != 0 {
 		panic("odd size round-robin")
 	}
 
@@ -82,7 +82,7 @@ func RoundRobin(µ, rounds int, genomes ...evo.Genome) (winners []evo.Genome) {
 	for i := range genomes {
 		pool = append(pool, rrcomp{genomes[i], 0})
 	}
-	if len(pool) % 2 != 0 {
+	if len(pool)%2 != 0 {
 		pool = append(pool, rrcomp{dummy{}, -1})
 	}
 	pool.tourney(rounds)
@@ -121,7 +121,7 @@ func RoundRobinPool(µ, λ, rounds int) Pool {
 			}
 
 			// do the tournament
-			if λ % 2 != 0 {
+			if λ%2 != 0 {
 				pool = append(pool, rrcomp{dummy{}, -1})
 			}
 			pool.tourney(rounds)
