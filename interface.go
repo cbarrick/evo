@@ -1,5 +1,9 @@
 package evo
 
+import (
+	"math"
+)
+
 // Genomes represent candidate solutions and are implemented by the user. Your
 // genome type defines the inner loop of the evolutionary algorithm as the
 // Evolve method: For each genome in a population, the Evolve method is called,
@@ -51,6 +55,21 @@ type Population interface {
 	Genome
 	Stats() Stats
 	Iter() Iterator
+}
+
+// Max returns the genome with the highest fitness.
+func Max(pop Population) (best Genome) {
+	var val Genome
+	var fit, bestfit = float64(0), math.Inf(-1)
+	for i := pop.Iter(); i.Value() != nil; i.Next() {
+		val = i.Value()
+		fit = val.Fitness()
+		if fit > bestfit {
+			best = val
+			bestfit = fit
+		}
+	}
+	return best
 }
 
 // Iterators iterate over the genomes in a population and are returned by

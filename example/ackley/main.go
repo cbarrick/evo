@@ -140,7 +140,7 @@ func main() {
 	defer func() {
 		pop.Close()
 		selector.Close()
-		fmt.Println("\nSolution:", Max(pop))
+		fmt.Println("\nSolution:", evo.Max(pop))
 	}()
 	for {
 		select {
@@ -158,19 +158,4 @@ func main() {
 			}
 		}
 	}
-}
-
-// TODO: put this somewhere in the library
-func Max(pop evo.Population) evo.Genome {
-	var val, best evo.Genome
-	var fit, bestfit = float64(0), math.Inf(-1)
-	for i := pop.Iter(); i.Value() != nil; i.Next() {
-		val = i.Value()
-		fit = val.Fitness()
-		if fit > bestfit {
-			best = val
-			bestfit = fit
-		}
-	}
-	return best
 }
