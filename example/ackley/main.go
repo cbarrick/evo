@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/pop/gen"
@@ -15,13 +14,19 @@ import (
 
 // Tuneables
 const (
-	dim       = 30   // Dimension of the problem.
-	bounds    = 30   // Bounds of object parameters.
-	precision = 1e-6 // Desired precision.
+	dim       = 30    // Dimension of the problem.
+	bounds    = 30    // Bounds of object parameters.
+	precision = 1e-16 // Desired precision.
 )
 
 // Global objects
 var (
+	// Count of the number of fitness evaluations.
+	count = struct {
+		sync.Mutex
+		n int
+	}{}
+
 	// Each of the 40 members of the population generates 7 children and adds
 	// them to this pool. This pool returns to each member a different one of
 	// most fit to be their replacement in the next generation.
@@ -41,6 +46,8 @@ var (
 type ackley struct {
 	gene  real.Vector // The object vector to optimize
 	steps real.Vector // Strategy parameters for mutation
+	fit   float64     // The ackly function of the gene.
+	once  sync.Once   // Used to compute fitness lazily.
 }
 
 // When a genome is garbage collected, we recycle its vectors for new genomes.
@@ -50,40 +57,42 @@ func (ack *ackley) Close() {
 }
 
 // Returns the fitness as a string.
-// In our case, we only care about the optimum value, not the parameters used
-// to get there. Obviously you can/should return more details as needed.
 func (ack *ackley) String() string {
 	return fmt.Sprint(ack.Fitness())
 }
 
-// The fitness being maximized is the ackley function. Technically we care
-// about the minimum value of the ackley function, so we maximize the negative.
-// Fitness evaluation can be expensive, so we use a sync.Once to illistrate
-// caching of the fitness. Caching isn't important for this application, but it
-// can be when the fitness function is more expensive.
-func (ack *ackley) Fitness() (f float64) {
+// Fitness returns the ackley function of the gene. We are trying to solve a
+// minimization problem, so we return the negative of the traditional formula.
+// The fitness of a genome is only computed once across all calls to Fitness by
+// using a sync.Once.
+func (ack *ackley) Fitness() float64 {
 	const a, b = 20, 0.2
-	var sum1, sum2 float64
-	n := float64(dim)
-	for _, x := range ack.gene {
-		sum1 += x * x
-		sum2 += math.Cos(2 * math.Pi * x)
-	}
+	ack.once.Do(func() {
+		var sum1, sum2 float64
+		n := float64(dim)
+		for _, x := range ack.gene {
+			sum1 += x * x
+			sum2 += math.Cos(2 * math.Pi * x)
+		}
 
-	f -= a
-	f *= math.Exp(-b * math.Sqrt(sum1/n))
-	f -= math.Exp(sum2 / n)
-	f += a
-	f += math.E
-	f *= -1
-	return f
+		ack.fit -= a
+		ack.fit *= math.Exp(-b * math.Sqrt(sum1/n))
+		ack.fit -= math.Exp(sum2 / n)
+		ack.fit += a
+		ack.fit += math.E
+		ack.fit *= -1
+
+		count.Lock()
+		count.n++
+		count.Unlock()
+	})
+	return ack.fit
 }
 
-// Evolve implements the inner loop of the evolutionary algorithm. It is called
-// in parallel for each member of the population, and the genome returned
-// replaces the method receiver in the next generation. We use a 40 member
-// population and generate 7 new competing children per call, then return one
-// of the best.
+// Evolve implements the inner loop of the evolutionary algorithm.
+// The population calls the Evolve method of each genome, in parallel. Then,
+// each receiver returns a value to replace it in the next generation. A global
+// selector object synchronises replacement among the parallel parents.
 func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 	for i := 0; i < 7; i++ {
 		// Creation:
@@ -111,13 +120,12 @@ func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 		child.gene.LowPass(-bounds)
 
 		// Replacement: (40,280)
-		// Each child is added to a shared selection pool, defined globally.
-		// The pool decides which children should be used in the next generation.
+		// Each child is added to the global selection pool.
 		selector.Put(&child)
 	}
 
-	// This blocks until all parallel calls to Evolve have added their children
-	// to the pool. Then it returns one of the most fit to be the replacement.
+	// Finally, block until all parallel calls have added their children to the
+	// selection pool and return one of the selected replacements.
 	return selector.Get()
 }
 
@@ -125,6 +133,7 @@ func main() {
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.
+	// The population starts evolving as soon as it's created.
 	init := make([]evo.Genome, 40)
 	for i := range init {
 		init[i] = &ackley{
@@ -134,28 +143,38 @@ func main() {
 	}
 	pop := gen.New(init)
 
-	// Termination:
-	// Stop when we reach the desired precision or after some timeout.
-	timeout := time.After(5 * time.Second)
+	// Tear-down:
+	// Upon returning, we cleanup our resources and print the solution.
 	defer func() {
 		pop.Close()
 		selector.Close()
 		fmt.Println("\nSolution:", evo.Max(pop))
 	}()
+
+	// Run:
+	// We continuously poll the population for statistics used in the
+	// termination conditions.
 	for {
-		select {
-		case <-timeout:
+		count.Lock()
+		n := count.n
+		count.Unlock()
+		stats := pop.Stats()
+
+		// "\x1b[2K" is the escape code to clear the line
+		fmt.Printf("\x1b[2K\rCount: %6d | Max: %9.3g | Min: %9.3g | SD: %9.3g",
+			n,
+			stats.Max(),
+			stats.Min(),
+			stats.StdDeviation())
+
+		// We've converged once the deviation is within the precision
+		if stats.StdDeviation() < precision {
 			return
-		default:
-			stats := pop.Stats()
-			// "\x1b[2K" is the escape code to clear the line
-			fmt.Printf("\x1b[2K\rMax: %f | Min: %f | SD: %f",
-				stats.Max(),
-				stats.Min(),
-				stats.StdDeviation())
-			if stats.StdDeviation() < precision {
-				return
-			}
+		}
+
+		// Force stop after 200000 fitness evaluations
+		if n > 200000 {
+			return
 		}
 	}
 }
