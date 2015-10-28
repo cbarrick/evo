@@ -40,7 +40,7 @@ func (v Vector) Scale(s float64) {
 	}
 }
 
-func (v Vector) LowPass(min float64) {
+func (v Vector) LowBound(min float64) {
 	for i := range v {
 		if v[i] < min {
 			v[i] = min
@@ -48,7 +48,7 @@ func (v Vector) LowPass(min float64) {
 	}
 }
 
-func (v Vector) HighPass(max float64) {
+func (v Vector) HighBound(max float64) {
 	for i := range v {
 		if v[i] > max {
 			v[i] = max

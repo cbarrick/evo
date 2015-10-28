@@ -114,10 +114,10 @@ func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 		// Lognormal scaling of strategy parameters.
 		// Gausian perturbation of object parameters.
 		child.steps.Adapt()
-		child.steps.LowPass(precision)
+		child.steps.LowBound(precision)
 		child.gene.Step(child.steps)
-		child.gene.HighPass(bounds)
-		child.gene.LowPass(-bounds)
+		child.gene.HighBound(bounds)
+		child.gene.LowBound(-bounds)
 
 		// Replacement: (40,280)
 		// Each child is added to the global selection pool.
