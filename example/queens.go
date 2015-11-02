@@ -4,47 +4,64 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
+	"github.com/cbarrick/evo/pop/gen"
 	"github.com/cbarrick/evo/pop/graph"
 	"github.com/cbarrick/evo/sel"
 )
 
-// Count counts the number of fitness evaluations.
-// It is syncronised because fitness evaluations may happen in parrallel.
-var count struct {
-	sync.RWMutex
-	val int
-}
+// Tuneables
+const (
+	dim  = 256     // the dimension of the board
+	size = dim * 2 // the size of the population
+	isl  = 4       // the number of islands in which to divide the population
 
-// The queens type is our genome type
+	// the delay between island communications
+	delay = 500 * time.Millisecond
+)
+
+// Global objects
+var (
+	// Count of the number of fitness evaluations.
+	count struct {
+		sync.Mutex
+		n int
+	}
+
+	// A free-list used to recycle memory.
+	pool = sync.Pool{
+		New: func() interface{} {
+			return rand.Perm(dim)
+		},
+	}
+)
+
+// The queens type is our genome type. We evolve a permuation of [0,n)
+// representing the position of queens on an n x n board
 type queens struct {
-	gene    []int      // permutation representation of n-queens
-	fitness float64    // cache of the fitness
-	once    sync.Once  // used to sync fitness computations
-	pool    *sync.Pool // used to recycle genes
+	gene    []int     // permutation representation of an n-queens solution
+	fitness float64   // the negative of the number of conflicts in the solution
+	once    sync.Once // used to compute fitness lazily
 }
 
-// String produces the gene contents and fitness.
-// Useful for debugging.
+// Close recycles the memory of this genome to be use for new genomes.
+func (q *queens) Close() {
+	pool.Put(q.gene)
+	q.gene = nil
+}
+
+// String returns the gene contents and fitness.
 func (q *queens) String() string {
 	return fmt.Sprintf("%v@%v", q.gene, q.Fitness())
 }
 
-// The genome does not use the close method.
-// This could be used to implement genome recycling and reduce allocation.
-func (q *queens) Close() {
-	q.pool.Put(q.gene)
-	q.gene = nil
-}
-
-// Fitness returns the negative count of conflicts.
-// The value is cached so the computation only occurs once.
+// Fitness returns the negative of the number of conflicts in the solution.
+// The fitness of a genome is only computed once across all calls to Fitness by
+// using a sync.Once.
 func (q *queens) Fitness() float64 {
 	q.once.Do(func() {
 		for i := range q.gene {
@@ -61,33 +78,28 @@ func (q *queens) Fitness() float64 {
 		}
 		q.fitness /= 2
 
-		// we count the number of fitness evaluations
 		count.Lock()
-		count.val++
+		count.n++
 		count.Unlock()
 	})
 	return q.fitness
 }
 
-// Evolve is the implementation of the inner loop of the GA
-//
-// Evolve is called in-parallel for each position in the population. The
-// receiver of the method is the genome currently occupying that position. The
-// genome returned will occupy that position next iteration.
+// Evolve implements the inner loop of the evolutionary algorithm.
+// The population calls the Evolve method of each genome, in parallel. Then,
+// each receiver returns a value to replace it in the next generation.
 func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
-
-	// Selection:
-	// Select each parent using a simple random binary tournament
-	mom := q
-	dad := sel.BinaryTournament(matingPool...).(*queens)
-
 	// Crossover:
-	// Partially mapped crossover
-	child := &queens{gene: mom.pool.Get().([]int), pool: mom.pool}
-	perm.PMX(child.gene, mom.gene, dad.gene)
+	// We're implementing a diffusion model. For each member of the population,
+	// we receive a small mating pool containing only our neighbors. We choose
+	// a mate using a random binary tournament and create a child with
+	// partially mapped crossover.
+	mate := sel.BinaryTournament(matingPool...).(*queens)
+	child := &queens{gene: pool.Get().([]int)}
+	perm.PMX(child.gene, q.gene, mate.gene)
 
 	// Mutation:
-	// Perform n random swaps where n is taken from an exponential distribution
+	// Perform n random swaps where n is taken from an exponential distribution.
 	mutationCount := math.Ceil(rand.ExpFloat64() - 0.5)
 	for i := float64(0); i < mutationCount; i++ {
 		j := rand.Intn(len(child.gene))
@@ -96,98 +108,74 @@ func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
 	}
 
 	// Replacement:
-	// Only replace if the child is better or equal
+	// Only replace if the child is better or equal.
 	if q.Fitness() > child.Fitness() {
 		return q
 	}
 	return child
 }
 
-// Main is the entry point of our program.
-//
-// We construct an island model population where each island is a diffusion
-// population. The islands are arranged in a ring, and the nodes of each
-// diffusion population are arranged in a hypercube.
 func main() {
-	var dim int
-	if len(os.Args) > 2 {
-		var err error
-		dim, err = strconv.Atoi(os.Args[2])
-		if err != nil {
-			panic(err.Error())
-		}
-	} else {
-		dim = 256
-	}
+	fmt.Println("Dimension:", dim)
 
-	// tunables
-	var (
-		pop   evo.Population
-		size  = dim * 2              // the size of the population
-		isl   = 8                    // the number of islands
-		delay = 1 * time.Millisecond // delay between island communication
-	)
-
-	fmt.Printf("queens: dimension=%d population=%d\n", dim, size)
-
-	// pool of genes. lets us reuse genes, reducing allocation costs
-	pool := sync.Pool{
-		New: func() interface{} {
-			return make([]int, dim)
-		},
-	}
-
-	// random initial population
+	// Setup:
+	// We create a random initial population and divide it into islands. Each
+	// island is evolved independently. The islands are grouped together into
+	// a wrapping population. The wrapper coordiates migrations between the
+	// islands according to the delay period.
 	init := make([]evo.Genome, size)
 	for i := range init {
-		init[i] = &queens{gene: rand.Perm(dim), pool: &pool}
+		init[i] = &queens{gene: pool.Get().([]int)}
 	}
-
-	// construct the population
-	isleSize := size / isl
 	islands := make([]evo.Genome, isl)
+	islSize := size / isl
 	for i := range islands {
-		islands[i] = graph.Hypercube(init[i*isleSize : (i+1)*isleSize])
+		islands[i] = gen.New(init[i*islSize : (i+1)*islSize])
+		islands[i].(evo.Population).Start()
 	}
-	pop = graph.Grid(islands).SetDelay(delay)
+	pop := graph.Ring(islands)
+	pop.SetDelay(delay)
+	pop.Start()
 
-	// prints summary stats
-	// "\x1b[2K" is the escape code to clear the line
-	print := func(stats evo.Stats) {
-		count.RLock()
-		fmt.Printf("\x1b[2K\rCount: %d | Max: %d | Min: %d | SD: %f",
-			count.val,
-			int(stats.Max()),
-			int(stats.Min()),
-			stats.StdDeviation())
-		count.RUnlock()
-	}
+	// Tear-down:
+	// Upon returning, we cleanup our resources and print the solution.
+	defer func() {
+		pop.Close()
+		fmt.Println("\nSolution:", evo.Max(pop))
+	}()
 
-	// control loop
-	// continuously query the population for stats and print them
-	// kill the population when done
+	// Run:
+	// We continuously poll the population for statistics used in the
+	// termination conditions.
 	for {
+		count.Lock()
+		n := count.n
+		count.Unlock()
 		stats := pop.Stats()
-		print(stats)
 
-		// stop when fitness is 0
-		// or we count 1 million fitness computations
-		count.RLock()
-		if stats.Max() == 0 || count.val >= 1e6 {
-			pop.Close()
-			fmt.Println()
-			for i := pop.Iter(); i.Value() != nil; i.Next() {
-				if i.Value().Fitness() == 0 {
-					fmt.Println(i.Value())
-					break
-				}
-			}
-			count.RUnlock()
+		// "\x1b[2K" is the escape code to clear the line
+		fmt.Printf("\x1b[2K\rCount: %7d | Max: %4.0f | Min: %4.0f | SD: %6.6g",
+			n,
+			stats.Max(),
+			stats.Min(),
+			stats.StdDeviation())
+
+		// We've found the solution when max is 0
+		if stats.Max() == 0 {
 			return
 		}
-		count.RUnlock()
 
-		// sleep before next poll
-		<-time.After(100 * time.Millisecond)
+		// We've converged once the deviation is less than 0.01
+		if stats.StdDeviation() < 1e-2 {
+			return
+		}
+
+		// Force stop after 2,000,000 fitness evaluations
+		if n > 2e6 {
+			return
+		}
+
+		// var blocker chan struct{}
+		// <-blocker
 	}
 }

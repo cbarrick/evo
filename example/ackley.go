@@ -22,10 +22,10 @@ const (
 // Global objects
 var (
 	// Count of the number of fitness evaluations.
-	count = struct {
+	count struct {
 		sync.Mutex
 		n int
-	}{}
+	}
 
 	// Each of the 40 members of the population generates 7 children and adds
 	// them to this pool. This pool returns to each member a different one of
@@ -44,13 +44,13 @@ var (
 // optimizes the ackley function. Each genome also contains a vector of strategy
 // parameters used with a self-adaptive evolution strategy.
 type ackley struct {
-	gene  real.Vector // The object vector to optimize
-	steps real.Vector // Strategy parameters for mutation
-	fit   float64     // The ackly function of the gene.
-	once  sync.Once   // Used to compute fitness lazily.
+	gene  real.Vector // the object vector to optimize
+	steps real.Vector // strategy parameters for mutation
+	fit   float64     // the ackley function of the gene
+	once  sync.Once   // used to compute fitness lazily
 }
 
-// When a genome is garbage collected, we recycle its vectors for new genomes.
+// Close recycles the memory of this genome to be use for new genomes.
 func (ack *ackley) Close() {
 	vectors.Put(ack.gene)
 	vectors.Put(ack.steps)
@@ -133,7 +133,6 @@ func main() {
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.
-	// The population starts evolving as soon as it's created.
 	init := make([]evo.Genome, 40)
 	for i := range init {
 		init[i] = &ackley{
@@ -142,6 +141,7 @@ func main() {
 		}
 	}
 	pop := gen.New(init)
+	pop.Start()
 
 	// Tear-down:
 	// Upon returning, we cleanup our resources and print the solution.
@@ -152,8 +152,8 @@ func main() {
 	}()
 
 	// Run:
-	// We continuously poll the population for statistics used in the
-	// termination conditions.
+	// We continuously poll the population for statistics and terminate when we
+	// have a solution or after 200,000 evaluations.
 	for {
 		count.Lock()
 		n := count.n
@@ -172,7 +172,7 @@ func main() {
 			return
 		}
 
-		// Force stop after 200000 fitness evaluations
+		// Force stop after 200,000 fitness evaluations
 		if n > 200000 {
 			return
 		}

@@ -5,23 +5,35 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
-	"github.com/cbarrick/evo/pop/gen"
+	"github.com/cbarrick/evo/pop/graph"
 	"github.com/cbarrick/evo/sel"
 )
 
-// Best is the shortest known tour for the cities below.
-const best float64 = 118282
+// Constants
+const (
+	size = dim * 5     // the size of the population
+	dim  = len(cities) // the dimension of the problem
+	best = 118282      // shortest known tour of the cities
+)
 
-// Count counts the number of fitness evaluations.
-// It is syncronised because fitness evaluations may happen in parrallel.
-var count struct {
-	sync.RWMutex
-	val int
-}
+// Global objects
+var (
+	// Count of the number of fitness evaluations.
+	count struct {
+		sync.Mutex
+		n int
+	}
+
+	// A free-list used to recycle memory.
+	pool = sync.Pool{
+		New: func() interface{} {
+			return rand.Perm(dim)
+		},
+	}
+)
 
 // A city is a coordinate pair giving the position of the city.
 type city struct {
@@ -159,57 +171,51 @@ var cities = [...]city{
 	{3248, 14152},
 }
 
-// Dist returns the distance between two cities
+// Dist returns the distance between two cities.
 func dist(a, b city) float64 {
 	return math.Sqrt((a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y))
 }
 
-// The tsp type is our genome type
+// The tsp type is our genome type.
 type tsp struct {
-	gene    []int      // permutation representation of traveling salesman
-	fitness float64    // cache of the fitness
-	once    sync.Once  // used to sync fitness computations
-	pool    *sync.Pool // used to recycle genes
+	gene    []int     // permutation representation of a tour
+	fitness float64   // the negative length of the tour
+	once    sync.Once // used to compute fitness lazily
 }
 
-// String produces the gene contents and fitness.
-// Useful for debugging.
+// String returns the gene contents and fitness.
 func (t *tsp) String() string {
 	return fmt.Sprintf("%v@%v", t.gene, t.Fitness())
 }
 
-// The genome does not use the close method.
-// This could be used to implement genome recycling and reduce allocation.
+// Close recycles the memory of this genome to be use for new genomes.
 func (t *tsp) Close() {
-	t.pool.Put(t.gene)
+	pool.Put(t.gene)
 	t.gene = nil
 }
 
 // Fitness returns the negative length of the tour represented by a tsp genome.
-// The value is cached so the computation only occurs once.
+// The fitness of a genome is only computed once across all calls to Fitness by
+// using a sync.Once.
 func (t *tsp) Fitness() float64 {
 	t.once.Do(func() {
 		for i := range t.gene {
 			a := cities[t.gene[i]]
-			b := cities[t.gene[(i+1)%len(t.gene)]]
+			b := cities[t.gene[(i+1)%dim]]
 			t.fitness -= dist(a, b)
 		}
 
-		// count this fitness evaluation
 		count.Lock()
-		count.val++
+		count.n++
 		count.Unlock()
 	})
 	return t.fitness
 }
 
-// Evolve is the implementation of the inner loop of the GA
-//
-// Evolve is called in-parallel for each position in the population. The
-// receiver of the method is the genome currently occupying that position. The
-// genome returned will occupy that position next iteration.
+// Evolve implements the inner loop of the evolutionary algorithm.
+// The population calls the Evolve method of each genome, in parallel. Then,
+// each receiver returns a value to replace it in the next generation.
 func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
-
 	// Selection:
 	// Select each parent using a simple random binary tournament
 	mom := sel.BinaryTournament(matingPool...).(*tsp)
@@ -217,7 +223,7 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 
 	// Crossover:
 	// Edge recombination
-	child := &tsp{gene: mom.pool.Get().([]int), pool: mom.pool}
+	child := &tsp{gene: pool.Get().([]int)}
 	perm.EdgeX(child.gene, mom.gene, dad.gene)
 
 	// Mutation:
@@ -234,75 +240,53 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-// Main is the entry point of our program.
-//
-// We construct an island model population where each island is a diffusion
-// population. The islands are arranged in a ring, and the nodes of each
-// diffusion population are arranged in a hypercube.
 func main() {
-	dim := len(cities)
-
-	// tunables
-	var (
-		pop  evo.Population
-		size = dim * 5 // the size of the population
-	)
-
-	fmt.Printf("tsp: dimension=%d population=%d\n", dim, size)
-
-	// pool of genes. lets us reuse genes, reducing allocation costs
-	pool := sync.Pool{
-		New: func() interface{} {
-			return make([]int, dim)
-		},
-	}
-
-	// random initial population
+	// Setup:
+	// We create a random initial population
+	// and evolve it using a generational model.
 	init := make([]evo.Genome, size)
 	for i := range init {
-		init[i] = &tsp{gene: rand.Perm(dim), pool: &pool}
+		init[i] = &tsp{gene: pool.Get().([]int)}
 	}
+	pop := graph.Hypercube(init)
+	pop.Start()
 
-	// construct the population
-	pop = gen.New(init)
+	// Tear-down:
+	// Upon returning, we cleanup our resources and print the solution.
+	defer func() {
+		pop.Close()
+		fmt.Println("\nSolution:", evo.Max(pop))
+	}()
 
-	// prints summary stats
-	// "\x1b[2K" is the escape code to clear the line
-	print := func(stats evo.Stats) {
-		count.RLock()
-		fmt.Printf("\x1b[2K\rCount: %d | Max: %d | Min: %d | SD: %f",
-			count.val,
-			int(stats.Max()),
-			int(stats.Min()),
-			stats.StdDeviation())
-		count.RUnlock()
-	}
-
-	// control loop
-	// continuously query the population for stats and print them
-	// kill the population when done
+	// Run:
+	// We continuously poll the population for statistics used in the
+	// termination conditions.
 	for {
+		count.Lock()
+		n := count.n
+		count.Unlock()
 		stats := pop.Stats()
-		print(stats)
 
-		// stop when fitness is 0
-		// or we count 1 million fitness computations
-		count.RLock()
-		if stats.Max() == 0 || count.val >= 1e6 {
-			pop.Close()
-			fmt.Println()
-			for i := pop.Iter(); i.Value() != nil; i.Next() {
-				if i.Value().Fitness() == 0 {
-					fmt.Println(i.Value())
-					break
-				}
-			}
-			count.RUnlock()
+		// "\x1b[2K" is the escape code to clear the line
+		fmt.Printf("\x1b[2K\rCount: %7d | Max: %10.2f | Min: %10.2f | SD: %7.2e",
+			n,
+			stats.Max(),
+			stats.Min(),
+			stats.StdDeviation())
+
+		// We've found the solution when max is -best
+		if stats.Max() >= -best {
 			return
 		}
-		count.RUnlock()
 
-		// sleep before next poll
-		<-time.After(100 * time.Millisecond)
+		// We've converged once the deviation is less than 1e-12
+		if stats.StdDeviation() < 1e-12 {
+			return
+		}
+
+		// Force stop after 2,000,000 fitness evaluations
+		if n > 2e6 {
+			return
+		}
 	}
 }
