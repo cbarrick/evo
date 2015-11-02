@@ -23,23 +23,35 @@ func New(members []evo.Genome) evo.Population {
 }
 
 type population struct {
+	running  bool
 	members  []evo.Genome
 	membersc chan []evo.Genome
+	delay    time.Duration
+	delayc   chan time.Duration
 	updates  chan evo.Genome
 	migrate  chan chan evo.Genome
 	closec   chan chan struct{}
-	running  bool
 }
 
 // Start initiates the evolution loop in a separate goroutine.
 func (pop *population) Start() {
 	if !pop.running {
 		pop.membersc = make(chan []evo.Genome)
+		pop.delayc = make(chan time.Duration)
 		pop.updates = make(chan evo.Genome, len(pop.members))
 		pop.migrate = make(chan chan evo.Genome)
 		pop.closec = make(chan chan struct{})
 		pop.running = true
 		go pop.run()
+	}
+}
+
+// SetDelay sets a delay between each iteration of the evolution loop.
+func (pop *population) SetDelay(d time.Duration) {
+	if pop.running {
+		pop.delayc <- d
+	} else {
+		pop.delay = d
 	}
 }
 
@@ -49,6 +61,11 @@ func (pop *population) Close() {
 		ch := make(chan struct{})
 		pop.closec <- ch
 		<-ch
+		close(pop.membersc)
+		close(pop.delayc)
+		close(pop.updates)
+		close(pop.migrate)
+		close(pop.closec)
 		pop.running = false
 	}
 }
@@ -91,8 +108,7 @@ func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
 // The main goroutine.
 func (pop *population) run() {
 	var (
-		delay   time.Duration
-		mate    = time.After(delay)
+		mate    = time.After(pop.delay)
 		nextgen = make([]evo.Genome, len(pop.members))
 		pos     = 0
 	)
@@ -106,6 +122,8 @@ func (pop *population) run() {
 
 	for {
 		select {
+
+		case pop.delay = <- pop.delayc:
 
 		case pop.membersc <- pop.members:
 			memcopy := make([]evo.Genome, len(pop.members))
@@ -138,11 +156,10 @@ func (pop *population) run() {
 					nextgen[i] = nil
 				}
 				pos = 0
-				mate = time.After(delay)
+				mate = time.After(pop.delay)
 			}
 
 		case ch := <-pop.closec:
-			close(pop.membersc)
 			ch <- struct{}{}
 			return
 

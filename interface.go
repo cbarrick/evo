@@ -2,6 +2,7 @@ package evo
 
 import (
 	"math"
+	"time"
 )
 
 // Genomes represent candidate solutions and are implemented by the user. Your
@@ -48,6 +49,9 @@ type Population interface {
 	// The Start method starts evolving the population in a separate goroutine.
 	// Use the Close method to stop.
 	Start()
+
+	// SetDelay sets a delay between each iteration of the evolution loop.
+	SetDelay(time.Duration)
 
 	// The Stats method returns statistics about the fitness of genomes in the
 	// population.

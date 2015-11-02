@@ -131,40 +131,39 @@ func (n *node) SetDelay(d time.Duration) {
 // Graphs
 // -------------------------
 
-// Warning: this type will become private before v0.1.0
-type Graph struct {
+type graph struct {
 	nodes []node
 }
 
-func (g *Graph) Start() {
+func (g *graph) Start() {
 	for i := range g.nodes {
 		g.nodes[i].Start()
 	}
 }
 
-func (g *Graph) Close() {
+func (g *graph) Close() {
 	for i := range g.nodes {
 		g.nodes[i].Close()
 	}
 }
 
-func (g *Graph) Iter() evo.Iterator {
+func (g *graph) Iter() evo.Iterator {
 	return iterate(g)
 }
 
-func (g *Graph) Stats() (s evo.Stats) {
+func (g *graph) Stats() (s evo.Stats) {
 	for i := g.Iter(); i.Value() != nil; i.Next() {
 		s = s.Insert(i.Value().Fitness())
 	}
 	return s
 }
 
-func (g *Graph) Fitness() float64 {
+func (g *graph) Fitness() float64 {
 	return g.Stats().Max()
 }
 
-func (g *Graph) Evolve(suiters ...evo.Genome) evo.Genome {
-	h := suiters[rand.Intn(len(suiters))].(*Graph)
+func (g *graph) Evolve(suiters ...evo.Genome) evo.Genome {
+	h := suiters[rand.Intn(len(suiters))].(*graph)
 	i := rand.Intn(len(g.nodes))
 	j := rand.Intn(len(h.nodes))
 	x := g.nodes[i].Value()
@@ -174,11 +173,10 @@ func (g *Graph) Evolve(suiters ...evo.Genome) evo.Genome {
 	return g
 }
 
-func (g *Graph) SetDelay(d time.Duration) *Graph {
+func (g *graph) SetDelay(d time.Duration) {
 	for i := range g.nodes {
 		g.nodes[i].SetDelay(d)
 	}
-	return g
 }
 
 // Iterator
@@ -187,11 +185,11 @@ func (g *Graph) SetDelay(d time.Duration) *Graph {
 type iter struct {
 	sub evo.Iterator
 	idx int
-	g   *Graph
+	g   *graph
 	val evo.Genome
 }
 
-func iterate(g *Graph) evo.Iterator {
+func iterate(g *graph) evo.Iterator {
 	var it iter
 	it.idx = 0
 	it.g = g
@@ -236,12 +234,12 @@ func (it *iter) Next() {
 // -------------------------
 
 // New creates a new graph population. No particular layout is guarenteed.
-func New(values []evo.Genome) *Graph {
+func New(values []evo.Genome) *graph {
 	return Hypercube(values)
 }
 
 // Grid creates a new graph population arranged as a 2D grid.
-func Grid(values []evo.Genome) *Graph {
+func Grid(values []evo.Genome) *graph {
 	width := len(values) << 1
 	layout := make([][]int, len(values))
 	for i := range layout {
@@ -255,7 +253,7 @@ func Grid(values []evo.Genome) *Graph {
 }
 
 // Hypercube creates a new graph population arranged as a hypercube.
-func Hypercube(values []evo.Genome) *Graph {
+func Hypercube(values []evo.Genome) *graph {
 	var dimension uint
 	for dimension = 0; len(values) > (1 << dimension); dimension++ {
 	}
@@ -270,7 +268,7 @@ func Hypercube(values []evo.Genome) *Graph {
 }
 
 // Ring creates a new graph population arranged as a ring.
-func Ring(values []evo.Genome) *Graph {
+func Ring(values []evo.Genome) *graph {
 	layout := make([][]int, len(values))
 	for i := range values {
 		layout[i] = make([]int, 2)
@@ -284,8 +282,8 @@ func Ring(values []evo.Genome) *Graph {
 // The layout is specified as an adjacency list in terms of position, e.g. if
 // layout[0] == [1,2,3] then the 0th node will have three peers, namely the
 // 1st, 2nd, and 3rd nodes.
-func Custom(layout [][]int, values []evo.Genome) *Graph {
-	g := new(Graph)
+func Custom(layout [][]int, values []evo.Genome) *graph {
+	g := new(graph)
 	g.nodes = make([]node, len(values))
 	for i := range g.nodes {
 		val := values[i]
