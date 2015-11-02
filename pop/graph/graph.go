@@ -21,25 +21,18 @@ import (
 // Nodes evolve their underlying genome concurrently with all other nodes in a
 // graph. The underlying genome takes suitors from adjacent nodes.
 type node struct {
-	val    evo.Genome
-	peers  []*node
-	valc   chan evo.Genome
-	delayc chan time.Duration
-	closec chan chan struct{}
-}
-
-func (n *node) init(val evo.Genome, peers []*node) {
-	n.val = val
-	n.peers = peers
-	n.valc = make(chan evo.Genome)
-	n.delayc = make(chan time.Duration)
-	n.closec = make(chan chan struct{})
+	val     evo.Genome
+	peers   []*node
+	delay   time.Duration
+	valc    chan evo.Genome
+	delayc  chan time.Duration
+	closec  chan chan struct{}
+	running bool
 }
 
 func (n *node) run() {
 	var (
-		delay   time.Duration
-		mate    = time.After(delay)
+		mate    = time.After(n.delay)
 		suiters = make([]evo.Genome, len(n.peers))
 		done    = make(chan evo.Genome)
 		nextval = n.val
@@ -53,7 +46,7 @@ func (n *node) run() {
 	for {
 		select {
 
-		case delay = <-n.delayc:
+		case n.delay = <-n.delayc:
 
 		case n.valc <- n.val:
 		case nextval = <-n.valc:
@@ -83,7 +76,7 @@ func (n *node) run() {
 					val.Close()
 				})
 			}
-			mate = time.After(delay)
+			mate = time.After(n.delay)
 
 		case ch := <-n.closec:
 			ch <- struct{}{}
@@ -92,20 +85,35 @@ func (n *node) run() {
 	}
 }
 
+// Start starts the node evolving it's genome in a separate goroutine.
+func (n *node) Start() {
+	if !n.running {
+		n.valc = make(chan evo.Genome)
+		n.delayc = make(chan time.Duration)
+		n.closec = make(chan chan struct{})
+		n.running = true
+		go n.run()
+	}
+}
+
 // Close stops the node from evolving it's genome.
 func (n *node) Close() {
-	ch := make(chan struct{})
-	n.closec <- ch
-	<-ch
-	close(n.valc)
-	close(n.delayc)
-	close(n.closec)
+	if n.running {
+		ch := make(chan struct{})
+		n.closec <- ch
+		<-ch
+		close(n.valc)
+		close(n.delayc)
+		close(n.closec)
+		n.running = false
+	}
 }
 
 // Value returns the genome underlying the node.
 func (n *node) Value() (val evo.Genome) {
-	val, ok := <-n.valc
-	if !ok {
+	if n.running {
+		val = <-n.valc
+	} else {
 		val = n.val
 	}
 	return val
@@ -113,7 +121,11 @@ func (n *node) Value() (val evo.Genome) {
 
 // SetDelay sets a delay between each evolution.
 func (n *node) SetDelay(d time.Duration) {
-	n.delayc <- d
+	if n.running {
+		n.delayc <- d
+	} else {
+		n.delay = d
+	}
 }
 
 // Graphs
@@ -122,6 +134,18 @@ func (n *node) SetDelay(d time.Duration) {
 // Warning: this type will become private before v0.1.0
 type Graph struct {
 	nodes []node
+}
+
+func (g *Graph) Start() {
+	for i := range g.nodes {
+		g.nodes[i].Start()
+	}
+}
+
+func (g *Graph) Close() {
+	for i := range g.nodes {
+		g.nodes[i].Close()
+	}
 }
 
 func (g *Graph) Iter() evo.Iterator {
@@ -133,12 +157,6 @@ func (g *Graph) Stats() (s evo.Stats) {
 		s = s.Insert(i.Value().Fitness())
 	}
 	return s
-}
-
-func (g *Graph) Close() {
-	for i := range g.nodes {
-		g.nodes[i].Close()
-	}
 }
 
 func (g *Graph) Fitness() float64 {
@@ -275,10 +293,8 @@ func Custom(layout [][]int, values []evo.Genome) *Graph {
 		for j := range layout[i] {
 			peers[j] = &g.nodes[j]
 		}
-		g.nodes[i].init(val, peers)
-	}
-	for i := range g.nodes {
-		go g.nodes[i].run()
+		g.nodes[i].val = val
+		g.nodes[i].peers = peers
 	}
 
 	return g

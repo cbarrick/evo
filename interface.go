@@ -36,24 +36,26 @@ type Genome interface {
 
 // Populations orchestrate the evolution of genomes.
 //
-// Populations implement Genome by providing uniform random migration as the
-// Evolve method. Thus architectures like the island model can be implemented by
-// nesting populations.
-//
-// Populations execute the evolutionary algorithm in a separate goroutine. The
-// Close method stops that process.
-//
-// The Stats method returns statistics about the fitness of genomes in the
-// population.
-//
-// The Iter method returns an iterator over the genomes in the population. If
-// called on a meta-population, i.e. one whose members are themselves
-// populations, then the iterator walks over the leaf-level genomes.
+// Populations are composable, i.e. the can be used as Genomes in other
+// populations. The Evolve method implements a migration between the method
+// receiver and one or more populations in the mating pool. Architectures like
+// the island model can be implemented by nesting populations.
 //
 // The builtin populations live in the package evo/pop.
 type Population interface {
 	Genome
+
+	// The Start method starts evolving the population in a separate goroutine.
+	// Use the Close method to stop.
+	Start()
+
+	// The Stats method returns statistics about the fitness of genomes in the
+	// population.
 	Stats() Stats
+
+	// The Iter method returns an iterator over the genomes in the population.
+	// If called on a meta-population, i.e. one whose members are themselves
+	// populations, then the iterator walks over the leaf-level genomes.
 	Iter() Iterator
 }
 

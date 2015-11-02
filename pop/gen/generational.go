@@ -14,8 +14,12 @@ import (
 	"github.com/cbarrick/evo"
 )
 
-// Population
-// -------------------------
+// New constructs a generational population starting from the given members.
+func New(members []evo.Genome) evo.Population {
+	pop := new(population)
+	pop.members = members
+	return pop
+}
 
 type population struct {
 	members  []evo.Genome
@@ -23,17 +27,55 @@ type population struct {
 	updates  chan evo.Genome
 	migrate  chan chan evo.Genome
 	closec   chan chan struct{}
-	closed   bool
+	running  bool
 }
 
-func (pop *population) init(members []evo.Genome) {
-	pop.members = members
-	pop.membersc = make(chan []evo.Genome)
-	pop.updates = make(chan evo.Genome, len(pop.members))
-	pop.migrate = make(chan chan evo.Genome)
-	pop.closec = make(chan chan struct{})
+// Start initiates the evolution loop in a separate goroutine.
+func (pop *population) Start() {
+	if !pop.running {
+		pop.membersc = make(chan []evo.Genome)
+		pop.updates = make(chan evo.Genome, len(pop.members))
+		pop.migrate = make(chan chan evo.Genome)
+		pop.closec = make(chan chan struct{})
+		pop.running = true
+		go pop.run()
+	}
 }
 
+// Close terminates the evolution loop.
+func (pop *population) Close() {
+	if pop.running {
+		ch := make(chan struct{})
+		pop.closec <- ch
+		<-ch
+		pop.running = false
+	}
+}
+
+// Iter returns an iterator ranging over the values of the population.
+func (pop *population) Iter() evo.Iterator {
+	return iterate(pop)
+}
+
+// Stats returns statistics on the fitness of genomes in the population.
+func (pop *population) Stats() (s evo.Stats) {
+	for i := pop.Iter(); i.Value() != nil; i.Next() {
+		s = s.Insert(i.Value().Fitness())
+	}
+	return s
+}
+
+// Fitness returns the maximum fitness within the population.
+func (pop *population) Fitness() float64 {
+	return pop.Stats().Max()
+}
+
+// Evolve performs a random migration between this population and a random suiter.
+func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
+	panic("Evolve not yet implemented on generational populations")
+}
+
+// The main goroutine.
 func (pop *population) run() {
 	var (
 		delay   time.Duration
@@ -82,43 +124,11 @@ func (pop *population) run() {
 
 		case ch := <-pop.closec:
 			close(pop.membersc)
-			pop.closed = true
 			ch <- struct{}{}
 			return
 
 		}
 	}
-}
-
-// Iter returns an iterator ranging over the values of the population.
-func (pop *population) Iter() evo.Iterator {
-	return iterate(pop)
-}
-
-// Stats returns statistics on the fitness of genomes in the population.
-func (pop *population) Stats() (s evo.Stats) {
-	for i := pop.Iter(); i.Value() != nil; i.Next() {
-		s = s.Insert(i.Value().Fitness())
-	}
-	return s
-}
-
-// Close terminates the evolutionary algorithm.
-func (pop *population) Close() {
-	ch := make(chan struct{})
-	pop.closec <- ch
-	<-ch
-	return
-}
-
-// Fitness returns the maximum fitness within the population.
-func (pop *population) Fitness() float64 {
-	return pop.Stats().Max()
-}
-
-// Evolve performs a random migration between this population and a random suiter.
-func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
-	panic("Evolve not yet implemented on generational populations")
 }
 
 // Iterator
@@ -170,12 +180,4 @@ func (it *iter) Next() {
 			}
 		}
 	}
-}
-
-// New returns a generational population initially containing the given members.
-func New(members []evo.Genome) evo.Population {
-	pop := new(population)
-	pop.init(members)
-	go pop.run()
-	return pop
 }
