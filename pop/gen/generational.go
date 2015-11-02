@@ -8,6 +8,7 @@
 package gen
 
 import (
+	"math/rand"
 	"runtime"
 	"time"
 
@@ -72,7 +73,19 @@ func (pop *population) Fitness() float64 {
 
 // Evolve performs a random migration between this population and a random suiter.
 func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
-	panic("Evolve not yet implemented on generational populations")
+	var other = pop
+	for other == pop {
+		other = suiters[rand.Intn(len(suiters))].(*population)
+	}
+	chA := make(chan evo.Genome)
+	chB := make(chan evo.Genome)
+	pop.migrate <- chA
+	other.migrate <- chB
+	a := <-chA
+	b := <-chB
+	chA <- b
+	chB <- a
+	return pop
 }
 
 // The main goroutine.
@@ -105,6 +118,12 @@ func (pop *population) run() {
 					pop.updates <- members[i].Evolve(members...)
 				}(i, pop.members)
 			}
+
+		case ch := <-pop.migrate:
+			go func(ch chan evo.Genome) {
+				ch <- <-pop.updates
+				pop.updates <- <-ch
+			}(ch)
 
 		case val := <-pop.updates:
 			runtime.SetFinalizer(val, nil)
