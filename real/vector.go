@@ -61,7 +61,7 @@ func (v Vector) HighBound(max float64) Vector {
 	return v
 }
 
-func (v Vector) Bound(upper, lower Vector) Vector {
+func (v Vector) Bound(lower, upper Vector) Vector {
 	for i := range v {
 		if v[i] > upper[i] {
 			v[i] = upper[i]
