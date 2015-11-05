@@ -160,6 +160,10 @@ func (pop *population) run() {
 			}
 
 		case ch := <-pop.closec:
+			for pos < len(nextgen) {
+				<-pop.updates
+				pos++
+			}
 			ch <- struct{}{}
 			return
 
