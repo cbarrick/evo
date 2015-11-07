@@ -1,10 +1,11 @@
-package main
+package tsp
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
 	"sync"
+	"testing"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
@@ -240,7 +241,7 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-func main() {
+func Test(t *testing.T) {
 	// Setup:
 	// We create a random initial population
 	// and evolve it using a generational model.

@@ -1,10 +1,11 @@
-package main
+package ackley
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
 	"sync"
+	"testing"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/pop/gen"
@@ -129,7 +130,7 @@ func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 	return selector.Get()
 }
 
-func main() {
+func Test(t *testing.T) {
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.

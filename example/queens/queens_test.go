@@ -1,4 +1,4 @@
-package main
+package queens
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+	"testing"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
@@ -115,7 +116,7 @@ func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-func main() {
+func Test(t *testing.T) {
 	fmt.Println("Dimension:", dim)
 
 	// Setup:
