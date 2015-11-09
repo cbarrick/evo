@@ -148,7 +148,9 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-func Test(t *testing.T) {
+func TestTSP(t *testing.T) {
+	fmt.Println("Minimize tour of US capitals - optimal is", best)
+
 	// Setup:
 	// We create a random initial population
 	// and evolve it using a generational model.
@@ -169,7 +171,6 @@ func Test(t *testing.T) {
 	// Run:
 	// We continuously poll the population for statistics used in the
 	// termination conditions.
-	fmt.Println("Minimize tour of US capitals - optimal is", best)
 	for {
 		count.Lock()
 		n := count.n

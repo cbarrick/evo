@@ -116,8 +116,8 @@ func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
 	return child
 }
 
-func Test(t *testing.T) {
-	fmt.Println("Dimension:", dim)
+func TestQueens(t *testing.T) {
+	fmt.Printf("Find a solution to %d-queens\n", dim)
 
 	// Setup:
 	// We create a random initial population and divide it into islands. Each

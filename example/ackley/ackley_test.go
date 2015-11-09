@@ -130,7 +130,9 @@ func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
 	return selector.Get()
 }
 
-func Test(t *testing.T) {
+func TestAckley(t *testing.T) {
+	fmt.Printf("Minimize the Ackley function with n=%d\n", dim)
+
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.
@@ -162,11 +164,13 @@ func Test(t *testing.T) {
 		stats := pop.Stats()
 
 		// "\x1b[2K" is the escape code to clear the line
-		fmt.Printf("\x1b[2K\rCount: %6d | Max: %9.3g | Min: %9.3g | SD: %9.3g",
-			n,
-			stats.Max(),
-			stats.Min(),
-			stats.SD())
+		// The fitness of minimization problems is negative
+		fmt.Printf("\x1b[2K\rCount: %7d | Max: %8.3g | Mean: %8.3g | Min: %8.3g | RSD: %9.2e",
+			n,             // number of fitness evaluations
+			-stats.Min(),  // longest path
+			-stats.Mean(), // mean path
+			-stats.Max(),  // shortest path
+			stats.RSD())
 
 		// We've converged once the deviation is within the precision
 		if stats.SD() < precision {
