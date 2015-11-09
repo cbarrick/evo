@@ -55,9 +55,9 @@ func (q *queens) Close() {
 	q.gene = nil
 }
 
-// String returns the gene contents and fitness.
+// String returns the gene contents and number of conflicts.
 func (q *queens) String() string {
-	return fmt.Sprintf("%v@%v", q.gene, q.Fitness())
+	return fmt.Sprintf("%v@%v", q.gene, -q.Fitness())
 }
 
 // Fitness returns the negative of the number of conflicts in the solution.
@@ -155,11 +155,13 @@ func TestQueens(t *testing.T) {
 		stats := pop.Stats()
 
 		// "\x1b[2K" is the escape code to clear the line
-		fmt.Printf("\x1b[2K\rCount: %7d | Max: %4.0f | Min: %4.0f | SD: %6.6g",
+		// The fitness of minimization problems is negative
+		fmt.Printf("\x1b[2K\rCount: %7d | Max: %3.0f | Mean: %3.0f | Min: %3.0f | RSD: %9.2e",
 			n,
-			stats.Max(),
-			stats.Min(),
-			stats.SD())
+			-stats.Min(),
+			-stats.Mean(),
+			-stats.Max(),
+			stats.RSD())
 
 		// We've found the solution when max is 0
 		if stats.Max() == 0 {

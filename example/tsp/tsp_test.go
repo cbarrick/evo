@@ -45,7 +45,7 @@ type city struct {
 }
 
 // Dist returns the pseudo-euclidian distance between two cities. This is the
-// distance function used in the literature on this problem.
+// distance function used in the literature on this problem instance.
 // http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/DOC.PS
 func dist(a, b city) float64 {
 	xd := a.x - b.x
@@ -61,9 +61,9 @@ type tsp struct {
 	once    sync.Once // used to compute fitness lazily
 }
 
-// String returns the gene contents and fitness.
+// String returns the gene contents and length of the tour.
 func (t *tsp) String() string {
-	return fmt.Sprintf("%v@%v", t.gene, t.Fitness())
+	return fmt.Sprintf("%v@%v", t.gene, -t.Fitness())
 }
 
 // Close recycles the memory of this genome to be use for new genomes.
@@ -182,10 +182,10 @@ func TestTSP(t *testing.T) {
 		// "\x1b[2K" is the escape code to clear the line
 		// The fitness of minimization problems is negative
 		fmt.Printf("\x1b[2K\rCount: %7d | Max: %6.0f | Mean: %6.0f | Min: %6.0f | RSD: %7.2e",
-			n,             // number of fitness evaluations
-			-stats.Min(),  // longest path
-			-stats.Mean(), // mean path
-			-stats.Max(),  // shortest path
+			n,
+			-stats.Min(),
+			-stats.Mean(),
+			-stats.Max(),
 			stats.RSD())
 
 		// Stop when we get close. Finding the true minimum could take a while.
