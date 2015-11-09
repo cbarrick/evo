@@ -17,7 +17,7 @@ import (
 
 // Tuneables
 const (
-	dim  = 256     // the dimension of the board
+	dim  = 128     // the dimension of the board
 	size = dim * 2 // the size of the population
 	isl  = 4       // the number of islands in which to divide the population
 
