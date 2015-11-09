@@ -9,16 +9,16 @@ import (
 func TestMerge(t *testing.T) {
 	var a, b evo.Stats
 	for i := float64(0); i < 5; i++ {
-		a = a.Insert(i)
+		a = a.Put(i)
 	}
 	for i := float64(5); i < 10; i++ {
-		b = b.Insert(i)
+		b = b.Put(i)
 	}
 	stats := a.Merge(b)
 	if stats.Mean() != 4.5 {
 		t.Fail()
 	}
-	if stats.Variance() != 8.25 {
+	if stats.Var() != 8.25 {
 		t.Fail()
 	}
 }
@@ -51,9 +51,9 @@ func TestMean(t *testing.T) {
 	}
 }
 
-func TestVariance(t *testing.T) {
+func TestVar(t *testing.T) {
 	stats := data()
-	if stats.Variance() < 829.841820 || 829.841822 < stats.Variance() {
+	if stats.Var() < 829.841820 || 829.841822 < stats.Var() {
 		t.Fail()
 	}
 }
@@ -72,49 +72,49 @@ func TestRSD(t *testing.T) {
 	}
 }
 
-func TestLen(t *testing.T) {
+func TestCount(t *testing.T) {
 	stats := data()
-	if stats.Len() != 36 {
+	if stats.Count() != 36 {
 		t.Fail()
 	}
 }
 
 func data() (s evo.Stats) {
-	s = s.Insert(810)
-	s = s.Insert(820)
-	s = s.Insert(820)
-	s = s.Insert(840)
-	s = s.Insert(840)
-	s = s.Insert(845)
-	s = s.Insert(785)
-	s = s.Insert(790)
-	s = s.Insert(785)
-	s = s.Insert(835)
-	s = s.Insert(835)
-	s = s.Insert(835)
-	s = s.Insert(845)
-	s = s.Insert(855)
-	s = s.Insert(850)
-	s = s.Insert(760)
-	s = s.Insert(760)
-	s = s.Insert(770)
-	s = s.Insert(820)
-	s = s.Insert(820)
-	s = s.Insert(820)
-	s = s.Insert(820)
-	s = s.Insert(820)
-	s = s.Insert(825)
-	s = s.Insert(775)
-	s = s.Insert(775)
-	s = s.Insert(775)
-	s = s.Insert(825)
-	s = s.Insert(825)
-	s = s.Insert(825)
-	s = s.Insert(815)
-	s = s.Insert(825)
-	s = s.Insert(825)
-	s = s.Insert(770)
-	s = s.Insert(760)
-	s = s.Insert(765)
+	s = s.Put(810)
+	s = s.Put(820)
+	s = s.Put(820)
+	s = s.Put(840)
+	s = s.Put(840)
+	s = s.Put(845)
+	s = s.Put(785)
+	s = s.Put(790)
+	s = s.Put(785)
+	s = s.Put(835)
+	s = s.Put(835)
+	s = s.Put(835)
+	s = s.Put(845)
+	s = s.Put(855)
+	s = s.Put(850)
+	s = s.Put(760)
+	s = s.Put(760)
+	s = s.Put(770)
+	s = s.Put(820)
+	s = s.Put(820)
+	s = s.Put(820)
+	s = s.Put(820)
+	s = s.Put(820)
+	s = s.Put(825)
+	s = s.Put(775)
+	s = s.Put(775)
+	s = s.Put(775)
+	s = s.Put(825)
+	s = s.Put(825)
+	s = s.Put(825)
+	s = s.Put(815)
+	s = s.Put(825)
+	s = s.Put(825)
+	s = s.Put(770)
+	s = s.Put(760)
+	s = s.Put(765)
 	return s
 }

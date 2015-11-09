@@ -153,7 +153,7 @@ func (g *graph) Iter() evo.Iterator {
 
 func (g *graph) Stats() (s evo.Stats) {
 	for i := g.Iter(); i.Value() != nil; i.Next() {
-		s = s.Insert(i.Value().Fitness())
+		s = s.Put(i.Value().Fitness())
 	}
 	return s
 }

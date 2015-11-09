@@ -113,7 +113,7 @@ func TestBinaryTournament(t *testing.T) {
 	pop := dummies()
 	for i := 0; i < 1e6; i++ {
 		winner := sel.BinaryTournament(pop...).(dummy)
-		stats = stats.Insert(float64(winner))
+		stats = stats.Put(float64(winner))
 	}
 	if stats.Mean() < 5.5 || 6.5 < stats.Mean() {
 		t.Fail()

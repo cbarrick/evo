@@ -78,7 +78,7 @@ func (pop *population) Iter() evo.Iterator {
 // Stats returns statistics on the fitness of genomes in the population.
 func (pop *population) Stats() (s evo.Stats) {
 	for i := pop.Iter(); i.Value() != nil; i.Next() {
-		s = s.Insert(i.Value().Fitness())
+		s = s.Put(i.Value().Fitness())
 	}
 	return s
 }

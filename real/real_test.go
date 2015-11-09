@@ -43,7 +43,7 @@ func TestNormal(t *testing.T) {
 	var s evo.Stats
 	for i := 0; i < 65536; i++ {
 		x := real.Normal(1e-3)
-		s = s.Insert(x)
+		s = s.Put(x)
 	}
 	mean := s.Mean()
 	if mean < -1e-3 || 1e-3 < mean || math.IsNaN(mean) {
@@ -55,7 +55,7 @@ func TestLognormal(t *testing.T) {
 	var s evo.Stats
 	for i := 0; i < 65536; i++ {
 		x := math.Log(real.Lognormal(1e-3))
-		s = s.Insert(x)
+		s = s.Put(x)
 	}
 	mean := s.Mean()
 	if mean < -1e-3 || 1e-3 < mean || math.IsNaN(mean) {
