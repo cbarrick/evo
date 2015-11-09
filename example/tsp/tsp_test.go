@@ -15,13 +15,16 @@ import (
 
 // Constants
 const (
-	size = dim * 5     // the size of the population
 	dim  = len(cities) // the dimension of the problem
-	best = 118282      // shortest known tour of the cities
+	size = 256         // the size of the population
+	stop = 2e6         // terminate after this number of fitness evalutations
 )
 
 // Global objects
 var (
+	// The evolutionary loop managed by the population
+	pop evo.Population
+
 	// Count of the number of fitness evaluations.
 	count struct {
 		sync.Mutex
@@ -41,140 +44,14 @@ type city struct {
 	x, y float64
 }
 
-// Cities is the list of cities to tour for this example.
-var cities = [...]city{
-	{9860, 14152},
-	{9396, 14616},
-	{11252, 14848},
-	{11020, 13456},
-	{9512, 15776},
-	{10788, 13804},
-	{10208, 14384},
-	{11600, 13456},
-	{11252, 14036},
-	{10672, 15080},
-	{11136, 14152},
-	{9860, 13108},
-	{10092, 14964},
-	{9512, 13340},
-	{10556, 13688},
-	{9628, 14036},
-	{10904, 13108},
-	{11368, 12644},
-	{11252, 13340},
-	{10672, 13340},
-	{11020, 13108},
-	{11020, 13340},
-	{11136, 13572},
-	{11020, 13688},
-	{8468, 11136},
-	{8932, 12064},
-	{9512, 12412},
-	{7772, 11020},
-	{8352, 10672},
-	{9164, 12876},
-	{9744, 12528},
-	{8352, 10324},
-	{8236, 11020},
-	{8468, 12876},
-	{8700, 14036},
-	{8932, 13688},
-	{9048, 13804},
-	{8468, 12296},
-	{8352, 12644},
-	{8236, 13572},
-	{9164, 13340},
-	{8004, 12760},
-	{8584, 13108},
-	{7772, 14732},
-	{7540, 15080},
-	{7424, 17516},
-	{8352, 17052},
-	{7540, 16820},
-	{7888, 17168},
-	{9744, 15196},
-	{9164, 14964},
-	{9744, 16240},
-	{7888, 16936},
-	{8236, 15428},
-	{9512, 17400},
-	{9164, 16008},
-	{8700, 15312},
-	{11716, 16008},
-	{12992, 14964},
-	{12412, 14964},
-	{12296, 15312},
-	{12528, 15196},
-	{15312, 6612},
-	{11716, 16124},
-	{11600, 19720},
-	{10324, 17516},
-	{12412, 13340},
-	{12876, 12180},
-	{13688, 10904},
-	{13688, 11716},
-	{13688, 12528},
-	{11484, 13224},
-	{12296, 12760},
-	{12064, 12528},
-	{12644, 10556},
-	{11832, 11252},
-	{11368, 12296},
-	{11136, 11020},
-	{10556, 11948},
-	{10324, 11716},
-	{11484, 9512},
-	{11484, 7540},
-	{11020, 7424},
-	{11484, 9744},
-	{16936, 12180},
-	{17052, 12064},
-	{16936, 11832},
-	{17052, 11600},
-	{13804, 18792},
-	{12064, 14964},
-	{12180, 15544},
-	{14152, 18908},
-	{5104, 14616},
-	{6496, 17168},
-	{5684, 13224},
-	{15660, 10788},
-	{5336, 10324},
-	{812, 6264},
-	{14384, 20184},
-	{11252, 15776},
-	{9744, 3132},
-	{10904, 3480},
-	{7308, 14848},
-	{16472, 16472},
-	{10440, 14036},
-	{10672, 13804},
-	{1160, 18560},
-	{10788, 13572},
-	{15660, 11368},
-	{15544, 12760},
-	{5336, 18908},
-	{6264, 19140},
-	{11832, 17516},
-	{10672, 14152},
-	{10208, 15196},
-	{12180, 14848},
-	{11020, 10208},
-	{7656, 17052},
-	{16240, 8352},
-	{10440, 14732},
-	{9164, 15544},
-	{8004, 11020},
-	{5684, 11948},
-	{9512, 16472},
-	{13688, 17516},
-	{11484, 8468},
-	{3248, 14152},
-}
-
-// Dist returns the distance between two cities.
+// Dist returns the pseudo-euclidian distance between two cities. This is the
+// distance function used in the literature on this problem.
+// http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/DOC.PS
 func dist(a, b city) float64 {
-	return math.Sqrt((a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y))
+	xd := a.x - b.x
+	yd := a.y - b.y
+	d := math.Sqrt(xd*xd/10 + yd*yd/10)
+	return math.Ceil(d)
 }
 
 // The tsp type is our genome type.
@@ -196,10 +73,13 @@ func (t *tsp) Close() {
 }
 
 // Fitness returns the negative length of the tour represented by a tsp genome.
-// The fitness of a genome is only computed once across all calls to Fitness by
-// using a sync.Once.
+// The fitness is negative because TSP is a minimization problem, but the Evo
+// API is phrased in terms of maximization. As a consequence, fitness statistics
+// (i.e. the result of pop.Stats()) are also negative: the shortest know path
+// would be -stats.Max().
 func (t *tsp) Fitness() float64 {
 	t.once.Do(func() {
+		t.fitness = 0
 		for i := range t.gene {
 			a := cities[t.gene[i]]
 			b := cities[t.gene[(i+1)%dim]]
@@ -211,6 +91,29 @@ func (t *tsp) Fitness() float64 {
 		count.Unlock()
 	})
 	return t.fitness
+}
+
+// TwoOpt performs a 2-opt local search for improvement of the gene. The first
+// edge is selected at random and inversions between all other edges are
+// evaluated in random order. Even if an improvement is not found, the gene will
+// be rotated by an uniform-random amount. We use this search as a form of
+// mutation.
+func (t *tsp) TwoOpt() {
+	t.once = sync.Once{}
+	perm.Rotate(t.gene, rand.Intn(dim))
+	for _, i := range rand.Perm(dim) {
+		if i < 2 { continue }
+		a := cities[t.gene[0]]
+		b := cities[t.gene[i-1]]
+		y := cities[t.gene[i]]
+		z := cities[t.gene[dim-1]]
+		before := dist(b, y) + dist(z, a)
+		after := dist(a, y) + dist(z, b)
+		if after < before {
+			perm.Reverse(t.gene[:i])
+			return
+		}
+	}
 }
 
 // Evolve implements the inner loop of the evolutionary algorithm.
@@ -228,9 +131,13 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 	perm.EdgeX(child.gene, mom.gene, dad.gene)
 
 	// Mutation:
-	// 10% chance to have a random inversion
-	if rand.Float32() < 0.1 {
-		perm.RandInvert(child.gene)
+	// There is an n% chance for the gene to have n random swaps
+	// and an n% chance to undergo n steps of a greedy 2-opt hillclimber
+	for rand.Float64() < 0.1 {
+		perm.RandSwap(child.gene)
+	}
+	for rand.Float64() < 0.1 {
+		child.TwoOpt()
 	}
 
 	// Replacement:
@@ -249,19 +156,20 @@ func Test(t *testing.T) {
 	for i := range init {
 		init[i] = &tsp{gene: pool.Get().([]int)}
 	}
-	pop := graph.Hypercube(init)
+	pop = graph.Hypercube(init)
 	pop.Start()
 
 	// Tear-down:
 	// Upon returning, we cleanup our resources and print the solution.
 	defer func() {
 		pop.Close()
-		fmt.Println("\nSolution:", evo.Max(pop))
+		fmt.Println("\nTour:", evo.Max(pop))
 	}()
 
 	// Run:
 	// We continuously poll the population for statistics used in the
 	// termination conditions.
+	fmt.Println("Minimize tour of US capitals - optimal is", best)
 	for {
 		count.Lock()
 		n := count.n
@@ -269,25 +177,81 @@ func Test(t *testing.T) {
 		stats := pop.Stats()
 
 		// "\x1b[2K" is the escape code to clear the line
-		fmt.Printf("\x1b[2K\rCount: %7d | Max: %10.2f | Min: %10.2f | SD: %7.2e",
-			n,
-			stats.Max(),
-			stats.Min(),
-			stats.SD())
+		// The fitness of minimization problems is negative
+		fmt.Printf("\x1b[2K\rCount: %7d | Max: %6.0f | Mean: %6.0f | Min: %6.0f | RSD: %7.2e",
+			n,             // number of fitness evaluations
+			-stats.Min(),  // longest path
+			-stats.Mean(), // mean path
+			-stats.Max(),  // shortest path
+			stats.RSD())
 
-		// We've found the solution when max is -best
-		if stats.Max() >= -best {
+		// Stop when we get close. Finding the true minimum could take a while.
+		if -stats.Max() < best * 1.1 {
 			return
 		}
 
-		// We've converged once the deviation is less than 1e-12
-		if stats.SD() < 1e-12 {
-			return
-		}
-
-		// Force stop after 2,000,000 fitness evaluations
-		if n > 2e6 {
+		// Force stop after some number fitness evaluations
+		if n > stop {
+			t.Fail()
 			return
 		}
 	}
+}
+
+// Best is the minimum tour of the cities.
+const best = 10628
+
+// Cities is a list of the capitals of the 48 contiguous American states. The
+// minimum tour length is 10628. This is dataset ATT48 from TSPLIB, a collection
+// of traveling salesman problem datasets maintained by Dr. Gerhard Reinelt:
+// "http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/"
+var cities = [48]city{
+	{6734, 1453},
+	{2233, 10},
+	{5530, 1424},
+	{401, 841},
+	{3082, 1644},
+	{7608, 4458},
+	{7573, 3716},
+	{7265, 1268},
+	{6898, 1885},
+	{1112, 2049},
+	{5468, 2606},
+	{5989, 2873},
+	{4706, 2674},
+	{4612, 2035},
+	{6347, 2683},
+	{6107, 669},
+	{7611, 5184},
+	{7462, 3590},
+	{7732, 4723},
+	{5900, 3561},
+	{4483, 3369},
+	{6101, 1110},
+	{5199, 2182},
+	{1633, 2809},
+	{4307, 2322},
+	{675, 1006},
+	{7555, 4819},
+	{7541, 3981},
+	{3177, 756},
+	{7352, 4506},
+	{7545, 2801},
+	{3245, 3305},
+	{6426, 3173},
+	{4608, 1198},
+	{23, 2216},
+	{7248, 3779},
+	{7762, 4595},
+	{7392, 2244},
+	{3484, 2829},
+	{6271, 2135},
+	{4985, 140},
+	{1916, 1569},
+	{7280, 4899},
+	{7509, 3239},
+	{10, 2676},
+	{6807, 2993},
+	{5185, 3258},
+	{3023, 1942},
 }
