@@ -4,6 +4,12 @@ import (
 	"math/rand"
 )
 
+// New returns a pseudo-random permutation of the integers [0,n). This function
+// is an alias for math/rand.Perm.
+func New(n int) []int {
+	return rand.Perm(n)
+}
+
 // RandSlice returns a random slice of the argument along with the boundaries.
 // That is to say:
 //     sub == slice[left:right]
