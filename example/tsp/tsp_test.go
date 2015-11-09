@@ -102,7 +102,9 @@ func (t *tsp) TwoOpt() {
 	t.once = sync.Once{}
 	perm.Rotate(t.gene, rand.Intn(dim))
 	for _, i := range rand.Perm(dim) {
-		if i < 2 { continue }
+		if i < 2 {
+			continue
+		}
 		a := cities[t.gene[0]]
 		b := cities[t.gene[i-1]]
 		y := cities[t.gene[i]]
@@ -187,7 +189,7 @@ func TestTSP(t *testing.T) {
 			stats.RSD())
 
 		// Stop when we get close. Finding the true minimum could take a while.
-		if -stats.Max() < best * 1.1 {
+		if -stats.Max() < best*1.1 {
 			return
 		}
 

@@ -84,7 +84,7 @@ func TestRandInvert(t *testing.T) {
 				t.Fail()
 				return
 			}
-			perm.Reverse(b[i:j+1])
+			perm.Reverse(b[i : j+1])
 			flipped = true
 		}
 	}
@@ -132,7 +132,7 @@ func TestRandSlice(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	slice := []int{0,1,2,3,4,5,6,7}
+	slice := []int{0, 1, 2, 3, 4, 5, 6, 7}
 	if perm.Search(slice, 7) != 7 {
 		t.Fail()
 	}
@@ -158,7 +158,7 @@ func TestValidate(t *testing.T) {
 		if recover() == nil {
 			t.Fail()
 		}
-		perm.Validate([]int{0,1,2,3})
+		perm.Validate([]int{0, 1, 2, 3})
 	}()
-	perm.Validate([]int{0,0,1,2})
+	perm.Validate([]int{0, 0, 1, 2})
 }

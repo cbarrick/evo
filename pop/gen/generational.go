@@ -123,7 +123,7 @@ func (pop *population) run() {
 	for {
 		select {
 
-		case pop.delay = <- pop.delayc:
+		case pop.delay = <-pop.delayc:
 
 		case pop.membersc <- pop.members:
 			memcopy := make([]evo.Genome, len(pop.members))

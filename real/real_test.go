@@ -79,7 +79,7 @@ func TestAdapt(t *testing.T) {
 
 func TestStep(t *testing.T) {
 	x := make(real.Vector, 8)
-	x.Step(real.Vector{1,1,1,1,1,1,1,1})
+	x.Step(real.Vector{1, 1, 1, 1, 1, 1, 1, 1})
 	for i := range x {
 		if x[i] < -3 || 3 < x[i] {
 			t.Fail()
@@ -123,7 +123,7 @@ func TestAdd(t *testing.T) {
 	z := x.Copy()
 	z.Add(y)
 	for i := range z {
-		if z[i] != x[i] + y[i] {
+		if z[i] != x[i]+y[i] {
 			t.Fail()
 		}
 	}
@@ -135,7 +135,7 @@ func TestSubtract(t *testing.T) {
 	z := x.Copy()
 	z.Subtract(y)
 	for i := range z {
-		if z[i] != x[i] - y[i] {
+		if z[i] != x[i]-y[i] {
 			t.Fail()
 		}
 	}
@@ -146,14 +146,14 @@ func TestScale(t *testing.T) {
 	y := x.Copy()
 	y.Scale(3)
 	for i := range y {
-		if y[i] != x[i] * 3 {
+		if y[i] != x[i]*3 {
 			t.Fail()
 		}
 	}
 }
 
 func TestHighBound(t *testing.T) {
-	x := real.Vector{1,3}
+	x := real.Vector{1, 3}
 	x.HighBound(2)
 	if x[0] != 1 || x[1] != 2 {
 		t.Fail()
@@ -161,7 +161,7 @@ func TestHighBound(t *testing.T) {
 }
 
 func TestLowBound(t *testing.T) {
-	x := real.Vector{1,3}
+	x := real.Vector{1, 3}
 	x.LowBound(2)
 	if x[0] != 2 || x[1] != 3 {
 		t.Fail()
@@ -169,8 +169,8 @@ func TestLowBound(t *testing.T) {
 }
 
 func TestBound(t *testing.T) {
-	x := real.Vector{1,4}
-	x.Bound(real.Vector{2,2}, real.Vector{3,3})
+	x := real.Vector{1, 4}
+	x.Bound(real.Vector{2, 2}, real.Vector{3, 3})
 	if x[0] != 2 || x[1] != 3 {
 		t.Fail()
 	}

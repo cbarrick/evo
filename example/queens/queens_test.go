@@ -5,8 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/cbarrick/evo"
 	"github.com/cbarrick/evo/perm"
