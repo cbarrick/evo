@@ -93,9 +93,15 @@ func (s Stats) Variance() float64 {
 	return s.sumsq / s.len
 }
 
-// StdDeviation returns the population standard deviation of the data.
-func (s Stats) StdDeviation() float64 {
+// SD returns the standard deviation of the data.
+func (s Stats) SD() float64 {
 	return math.Sqrt(s.sumsq / s.len)
+}
+
+// RSD returns the relative standard deviation of the data, also known as the
+// coefficient of variation.
+func (s Stats) RSD() float64 {
+	return s.SD() / s.Mean()
 }
 
 // Len returns the size of the data.
@@ -108,5 +114,5 @@ func (s Stats) String() string {
 	return fmt.Sprintf("Max: %f | Min: %f | SD: %f",
 		s.Max(),
 		s.Min(),
-		s.StdDeviation())
+		s.SD())
 }

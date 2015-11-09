@@ -158,7 +158,7 @@ func main() {
 			n,
 			stats.Max(),
 			stats.Min(),
-			stats.StdDeviation())
+			stats.SD())
 
 		// We've found the solution when max is 0
 		if stats.Max() == 0 {
@@ -166,7 +166,7 @@ func main() {
 		}
 
 		// We've converged once the deviation is less than 0.01
-		if stats.StdDeviation() < 1e-2 {
+		if stats.SD() < 1e-2 {
 			return
 		}
 

@@ -165,10 +165,10 @@ func main() {
 			n,
 			stats.Max(),
 			stats.Min(),
-			stats.StdDeviation())
+			stats.SD())
 
 		// We've converged once the deviation is within the precision
-		if stats.StdDeviation() < precision {
+		if stats.SD() < precision {
 			return
 		}
 
