@@ -47,6 +47,20 @@ func Reverse(slice []int) {
 	}
 }
 
+// Rotate rotates a slice by n positions
+func Rotate(slice []int, n int) {
+	size := len(slice)
+	for n < 0 {
+		n += size
+	}
+	for n >= size {
+		n -= size
+	}
+	Reverse(slice)
+	Reverse(slice[:n])
+	Reverse(slice[n:])
+}
+
 // Validate panics if the argument is not a permutation.
 // This can be useful when testing custom operators.
 func Validate(slice []int) {
