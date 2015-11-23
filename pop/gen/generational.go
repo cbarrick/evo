@@ -108,7 +108,7 @@ func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
 // The main goroutine.
 func (pop *population) run() {
 	var (
-		mate    = time.After(pop.delay)
+		mate    <-chan time.Time
 		nextgen = make([]evo.Genome, len(pop.members))
 		pos     = 0
 	)
@@ -119,6 +119,15 @@ func (pop *population) run() {
 			val.Close()
 		})
 	}
+
+	cross := func() {
+		for i := range pop.members {
+			go func(i int, members []evo.Genome) {
+				pop.updates <- members[i].Evolve(members...)
+			}(i, pop.members)
+		}
+	}
+	cross()
 
 	for {
 		select {
@@ -131,11 +140,7 @@ func (pop *population) run() {
 			pop.members = memcopy
 
 		case <-mate:
-			for i := range pop.members {
-				go func(i int, members []evo.Genome) {
-					pop.updates <- members[i].Evolve(members...)
-				}(i, pop.members)
-			}
+			cross()
 
 		case ch := <-pop.migrate:
 			go func(ch chan evo.Genome) {
