@@ -121,6 +121,7 @@ func (pop *population) run() {
 	}
 
 	cross := func() {
+		pos = 0
 		for i := range pop.members {
 			go func(i int, members []evo.Genome) {
 				pop.updates <- members[i].Evolve(members...)
@@ -160,7 +161,6 @@ func (pop *population) run() {
 				for i := range nextgen {
 					nextgen[i] = nil
 				}
-				pos = 0
 				mate = time.After(pop.delay)
 			}
 
