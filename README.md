@@ -14,11 +14,11 @@ https://godoc.org/github.com/cbarrick/evo
 
 ## Status & Contributing
 
-Evo is a general framework for developing genetic algorithms and more. It began life in fall 2015 as I studied evolutionary algorithms as an undergrad. The most recent release is [v0.1.2].
+Evo is a general framework for developing genetic algorithms and more. It began life in fall 2015 as I studied evolutionary algorithms as an undergrad. The most recent release is [v0.1.3].
 
 Contributions are welcome! I am currently a student and inexperienced maintainer, so please bear with me as I learn. The focus of the project thus far has been on the API design and less on performance. I am particularly interested in hearing about use-cases that are not well covered and success stories of where Evo excels. Testing, code reviews, and performance audits are always welcome and needed.
 
-[v0.1.2]: https://github.com/cbarrick/evo/tree/v0.1.2
+[v0.1.3]: https://github.com/cbarrick/evo/tree/v0.1.3
 
 
 ## Overview
