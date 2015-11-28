@@ -108,9 +108,14 @@ func (pop *population) Evolve(suiters ...evo.Genome) evo.Genome {
 // The main goroutine.
 func (pop *population) run() {
 	var (
-		mate    <-chan time.Time
+		// receives when the next iteration should start
+		mate <-chan time.Time
+
+		// holds the next generation as it is being built
 		nextgen = make([]evo.Genome, len(pop.members))
-		pos     = 0
+
+		// the number of updates until the next generation is complete
+		wait int
 	)
 
 	for i := range pop.members {
@@ -121,8 +126,9 @@ func (pop *population) run() {
 	}
 
 	cross := func() {
-		pos = 0
+		wait = 0
 		for i := range pop.members {
+			wait++
 			go func(i int, members []evo.Genome) {
 				pop.updates <- members[i].Evolve(members...)
 			}(i, pop.members)
@@ -154,9 +160,11 @@ func (pop *population) run() {
 			runtime.SetFinalizer(val, func(val evo.Genome) {
 				val.Close()
 			})
-			nextgen[pos] = val
-			pos++
-			if pos == len(nextgen) {
+
+			wait--
+			nextgen[wait] = val
+
+			if wait == 0 {
 				pop.members, nextgen = nextgen, pop.members
 				for i := range nextgen {
 					nextgen[i] = nil
@@ -165,9 +173,9 @@ func (pop *population) run() {
 			}
 
 		case ch := <-pop.closec:
-			for pos < len(nextgen) {
+			for 0 < wait {
 				<-pop.updates
-				pos++
+				wait--
 			}
 			ch <- struct{}{}
 			return
