@@ -121,7 +121,7 @@ func (t *tsp) TwoOpt() {
 // Evolve implements the inner loop of the evolutionary algorithm.
 // The population calls the Evolve method of each genome, in parallel. Then,
 // each receiver returns a value to replace it in the next generation.
-func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
+func Evolve(current evo.Genome, matingPool []evo.Genome) evo.Genome {
 	// Selection:
 	// Select each parent using a simple random binary tournament
 	mom := sel.BinaryTournament(matingPool...).(*tsp)
@@ -144,8 +144,8 @@ func (t *tsp) Evolve(matingPool ...evo.Genome) evo.Genome {
 
 	// Replacement:
 	// Only replace if the child is better or equal
-	if t.Fitness() > child.Fitness() {
-		return t
+	if current.Fitness() > child.Fitness() {
+		return current
 	}
 	return child
 }
@@ -156,18 +156,27 @@ func TestTSP(t *testing.T) {
 	// Setup:
 	// We create a random initial population
 	// and evolve it using a generational model.
-	init := make([]evo.Genome, size)
-	for i := range init {
-		init[i] = &tsp{gene: pool.Get().([]int)}
+	seed := make([]evo.Genome, size)
+	for i := range seed {
+		seed[i] = &tsp{gene: pool.Get().([]int)}
 	}
-	pop = graph.Hypercube(init)
-	pop.Start()
+	pop = graph.Hypercube(size)
+	pop.Evolve(seed, Evolve)
 
 	// Tear-down:
 	// Upon returning, we cleanup our resources and print the solution.
 	defer func() {
-		pop.Close()
-		fmt.Println("\nTour:", evo.Max(pop))
+		pop.Stop()
+		best := seed[0]
+		bestFit := seed[0].Fitness()
+		for i := range seed {
+			fit := seed[i].Fitness()
+			if fit > bestFit {
+				best = seed[i]
+				bestFit = fit
+			}
+		}
+		fmt.Println("\nTour:", best)
 	}()
 
 	// Run:
@@ -186,7 +195,7 @@ func TestTSP(t *testing.T) {
 			-stats.Min(),
 			-stats.Mean(),
 			-stats.Max(),
-			stats.RSD())
+			-stats.RSD())
 
 		// Stop when we get close. Finding the true minimum could take a while.
 		if -stats.Max() < best*1.1 {

@@ -32,13 +32,6 @@ var (
 	// them to this pool. This pool returns to each member a different one of
 	// most fit to be their replacement in the next generation.
 	selector = sel.ElitePool(40, 280)
-
-	// A free-list used to recycle memory.
-	vectors = sync.Pool{
-		New: func() interface{} {
-			return make(real.Vector, dim)
-		},
-	}
 )
 
 // The ackley type specifies our genome. We evolve a real-valued vector that
@@ -49,12 +42,6 @@ type ackley struct {
 	steps real.Vector // strategy parameters for mutation
 	fit   float64     // the ackley function of the gene
 	once  sync.Once   // used to compute fitness lazily
-}
-
-// Close recycles the memory of this genome to be use for new genomes.
-func (ack *ackley) Close() {
-	vectors.Put(ack.gene)
-	vectors.Put(ack.steps)
 }
 
 // Returns the fitness as a string.
@@ -94,13 +81,13 @@ func (ack *ackley) Fitness() float64 {
 // The population calls the Evolve method of each genome, in parallel. Then,
 // each receiver returns a value to replace it in the next generation. A global
 // selector object synchronises replacement among the parallel parents.
-func (ack *ackley) Evolve(suitors ...evo.Genome) evo.Genome {
+func Evolve(ack evo.Genome, suitors []evo.Genome) evo.Genome {
 	for i := 0; i < 7; i++ {
 		// Creation:
 		// We create the child genome from recycled memory when we can.
 		var child ackley
-		child.gene = vectors.Get().(real.Vector)
-		child.steps = vectors.Get().(real.Vector)
+		child.gene = make(real.Vector, dim)
+		child.steps = make(real.Vector, dim)
 
 		// Crossover:
 		// Select two parents at random.
@@ -136,22 +123,31 @@ func TestAckley(t *testing.T) {
 	// Setup:
 	// We initialize a set of 40 random solutions,
 	// then add them to a generational population.
-	init := make([]evo.Genome, 40)
-	for i := range init {
-		init[i] = &ackley{
+	seed := make([]evo.Genome, 40)
+	for i := range seed {
+		seed[i] = &ackley{
 			gene:  real.Random(dim, 30),
 			steps: real.Random(dim, 1),
 		}
 	}
-	pop := gen.New(init)
-	pop.Start()
+	var pop gen.Population
+	pop.Evolve(seed, Evolve)
 
 	// Tear-down:
 	// Upon returning, we cleanup our resources and print the solution.
 	defer func() {
-		pop.Close()
+		pop.Stop()
 		selector.Close()
-		fmt.Println("\nSolution:", evo.Max(pop))
+		best := seed[0]
+		bestFit := seed[0].Fitness()
+		for i := range seed {
+			fit := seed[i].Fitness()
+			if fit > bestFit {
+				best = seed[i]
+				bestFit = fit
+			}
+		}
+		fmt.Println("\nSolution:", best)
 	}()
 
 	// Run:

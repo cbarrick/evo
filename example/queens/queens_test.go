@@ -2,7 +2,6 @@ package queens
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"sync"
 	"testing"
@@ -17,42 +16,29 @@ import (
 
 // Tuneables
 const (
-	dim  = 128     // the dimension of the board
-	size = dim * 2 // the size of the population
+	dim  = 128     // the dimension of the problem
+	size = dim * 4 // the size of the population
 	isl  = 4       // the number of islands in which to divide the population
 
-	// the delay between island communications
-	delay = 500 * time.Millisecond
+	migration = size / isl / 8  // the size of migrations
+	delay     = 1 * time.Second // the delay between migrations
 )
 
 // Global objects
 var (
-	// Count of the number of fitness evaluations.
+	// counts the number of fitness evaluations
 	count struct {
 		sync.Mutex
 		n int
 	}
-
-	// A free-list used to recycle memory.
-	pool = sync.Pool{
-		New: func() interface{} {
-			return rand.Perm(dim)
-		},
-	}
 )
 
-// The queens type is our genome type. We evolve a permuation of [0,n)
+// The queens type is our genome. We evolve a permuation of [0,n)
 // representing the position of queens on an n x n board
 type queens struct {
 	gene    []int     // permutation representation of an n-queens solution
 	fitness float64   // the negative of the number of conflicts in the solution
 	once    sync.Once // used to compute fitness lazily
-}
-
-// Close recycles the memory of this genome to be use for new genomes.
-func (q *queens) Close() {
-	pool.Put(q.gene)
-	q.gene = nil
 }
 
 // String returns the gene contents and number of conflicts.
@@ -86,23 +72,22 @@ func (q *queens) Fitness() float64 {
 	return q.fitness
 }
 
-// Evolve implements the inner loop of the evolutionary algorithm.
-// The population calls the Evolve method of each genome, in parallel. Then,
-// each receiver returns a value to replace it in the next generation.
-func (q *queens) Evolve(matingPool ...evo.Genome) evo.Genome {
+// Evolution implements the body of the evolution loop.
+func Evolution(q evo.Genome, suitors []evo.Genome) evo.Genome {
 	// Crossover:
 	// We're implementing a diffusion model. For each member of the population,
 	// we receive a small mating pool containing only our neighbors. We choose
 	// a mate using a random binary tournament and create a child with
 	// partially mapped crossover.
-	mate := sel.BinaryTournament(matingPool...).(*queens)
-	child := &queens{gene: pool.Get().([]int)}
-	perm.PMX(child.gene, q.gene, mate.gene)
+	mom := q.(*queens)
+	dad := sel.BinaryTournament(suitors...).(*queens)
+	child := &queens{gene: make([]int, len(mom.gene))}
+	perm.PMX(child.gene, mom.gene, dad.gene)
 
 	// Mutation:
 	// Perform n random swaps where n is taken from an exponential distribution.
-	mutationCount := math.Ceil(rand.ExpFloat64() - 0.5)
-	for i := float64(0); i < mutationCount; i++ {
+	// mutationCount := math.Ceil(rand.ExpFloat64() - 0.5)
+	for i := float64(0); i < 5; i++ {
 		j := rand.Intn(len(child.gene))
 		k := rand.Intn(len(child.gene))
 		child.gene[j], child.gene[k] = child.gene[k], child.gene[j]
@@ -120,33 +105,40 @@ func TestQueens(t *testing.T) {
 	fmt.Printf("Find a solution to %d-queens\n", dim)
 
 	// Setup:
-	// We create a random initial population and divide it into islands. Each
-	// island is evolved independently. The islands are grouped together into
-	// a wrapping population. The wrapper coordiates migrations between the
-	// islands according to the delay period.
-	init := make([]evo.Genome, size)
-	for i := range init {
-		init[i] = &queens{gene: pool.Get().([]int)}
+	// We create an initial set of random candidates and divide them into "islands".
+	// Each island is evolved independently in a generational population.
+	// The islands are then linked together into a graph population with
+	seed := make([]evo.Genome, size)
+	for i := range seed {
+		seed[i] = &queens{gene: perm.New(dim)}
 	}
 	islands := make([]evo.Genome, isl)
 	islSize := size / isl
 	for i := range islands {
-		islands[i] = gen.New(init[i*islSize : (i+1)*islSize])
-		islands[i].(evo.Population).Start()
+		var island gen.Population
+		island.Evolve(seed[i*islSize:(i+1)*islSize], Evolution)
+		islands[i] = &island
 	}
-	pop := graph.Ring(islands)
-	pop.SetDelay(delay)
-	pop.Start()
+	pop := graph.Ring(isl)
+	pop.Evolve(islands, gen.Migrate(migration, delay))
 
-	// Tear-down:
-	// Upon returning, we cleanup our resources and print the solution.
+	// Teardown:
 	defer func() {
-		pop.Close()
-		fmt.Println("\nSolution:", evo.Max(pop))
+		pop.Stop()
+		best := seed[0]
+		bestFit := seed[0].Fitness()
+		for i := range seed {
+			fit := seed[i].Fitness()
+			if fit > bestFit {
+				best = seed[i]
+				bestFit = fit
+			}
+		}
+		fmt.Println("\nSolution:", best)
 	}()
 
-	// Run:
-	// We continuously poll the population for statistics used in the
+	// Termination:
+	// We continuously poll the population for statistics to check various
 	// termination conditions.
 	for {
 		count.Lock()
@@ -154,14 +146,15 @@ func TestQueens(t *testing.T) {
 		count.Unlock()
 		stats := pop.Stats()
 
-		// "\x1b[2K" is the escape code to clear the line
-		// The fitness of minimization problems is negative
+		// "\x1b[2K" is the xterm escape code to clear the line
+		// Because this is a minimization problem, the fitness is negative.
+		// Thus we update the statistics accordingly.
 		fmt.Printf("\x1b[2K\rCount: %7d | Max: %3.0f | Mean: %3.0f | Min: %3.0f | RSD: %9.2e",
 			n,
 			-stats.Min(),
 			-stats.Mean(),
 			-stats.Max(),
-			stats.RSD())
+			-stats.RSD())
 
 		// We've found the solution when max is 0
 		if stats.Max() == 0 {
@@ -177,8 +170,5 @@ func TestQueens(t *testing.T) {
 		if n > 2e6 {
 			return
 		}
-
-		// var blocker chan struct{}
-		// <-blocker
 	}
 }
