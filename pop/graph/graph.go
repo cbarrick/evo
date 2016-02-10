@@ -6,294 +6,163 @@
 // regular population, it is known as the diffusion model.
 package graph
 
-import (
-	"math/rand"
-	"runtime"
-	"time"
+import "github.com/cbarrick/evo"
 
-	"github.com/cbarrick/evo"
-)
+type Graph []node
 
-// Nodes
-// -------------------------
-
-// Node wraps a genome and manages the lifecycle of one slot in a population.
-// Nodes evolve their underlying genome concurrently with all other nodes in a
-// graph. The underlying genome takes suitors from adjacent nodes.
 type node struct {
-	val     evo.Genome
-	peers   []*node
-	delay   time.Duration
-	valc    chan evo.Genome
-	delayc  chan time.Duration
-	closec  chan chan struct{}
-	running bool
+	val    *evo.Genome
+	peers  []*node
+	getc   chan chan evo.Genome
+	setc   chan chan evo.Genome
+	closec chan chan struct{}
 }
 
-func (n *node) run() {
-	var (
-		mate    = time.After(n.delay)
-		suiters = make([]evo.Genome, len(n.peers))
-		done    = make(chan evo.Genome)
-		nextval = n.val
-	)
+// Grid creates a new graph population arranged as a 2D grid.
+func Grid(size int) Graph {
+	width := size << 1
+	layout := make([][]int, size)
+	for i := range layout {
+		layout[i] = make([]int, 4)
+		layout[i][0] = (i + 1 + size) % size
+		layout[i][1] = (i - 1 + size) % size
+		layout[i][2] = (i + width + size) % size
+		layout[i][3] = (i - width + size) % size
+	}
+	return Custom(layout)
+}
 
-	runtime.SetFinalizer(n.val, nil)
-	runtime.SetFinalizer(n.val, func(val evo.Genome) {
-		val.Close()
-	})
-
-	for {
-		select {
-
-		case n.delay = <-n.delayc:
-
-		case n.valc <- n.val:
-		case nextval = <-n.valc:
-
-		case <-mate:
-			go func(oldval evo.Genome) {
-				var ok bool
-				for i := range n.peers {
-					suiters[i], ok = <-n.peers[i].valc
-					if !ok {
-						return
-					}
-				}
-				newval := oldval.Evolve(suiters...)
-				done <- newval
-			}(n.val)
-
-		case val := <-done:
-			if nextval == n.val {
-				nextval = val
-			} else if val != n.val && val != nextval {
-				val.Close()
-			} else {
-				n.val = nextval
-				runtime.SetFinalizer(n.val, nil)
-				runtime.SetFinalizer(n.val, func(val evo.Genome) {
-					val.Close()
-				})
-			}
-			mate = time.After(n.delay)
-
-		case ch := <-n.closec:
-			ch <- struct{}{}
-			return
+// Hypercube creates a new graph population arranged as a hypercube.
+func Hypercube(size int) Graph {
+	var dim uint
+	for size > (1 << dim) {
+		dim++
+	}
+	layout := make([][]int, size)
+	for i := 0; i < size; i++ {
+		layout[i] = make([]int, dim)
+		for j := range layout[i] {
+			layout[i][j] = (i ^ (1 << uint(j))) % size
 		}
 	}
+	return Custom(layout)
 }
 
-// Start starts the node evolving it's genome in a separate goroutine.
-func (n *node) Start() {
-	if !n.running {
-		n.valc = make(chan evo.Genome)
-		n.delayc = make(chan time.Duration)
-		n.closec = make(chan chan struct{})
-		n.running = true
-		go n.run()
+// Ring creates a new graph population arranged as a ring.
+func Ring(size int) Graph {
+	layout := make([][]int, size)
+	for i := 0; i < size; i++ {
+		layout[i] = make([]int, 2)
+		layout[i][0] = (i - 1 + size) % size
+		layout[i][0] = (i + 1) % size
 	}
+	return Custom(layout)
 }
 
-// Close stops the node from evolving it's genome.
-func (n *node) Close() {
-	if n.running {
-		ch := make(chan struct{})
-		n.closec <- ch
-		<-ch
-		close(n.valc)
-		close(n.delayc)
-		close(n.closec)
-		n.running = false
+// Custom creates a new graph population with a custom layout.
+// The layout is specified as an adjacency list.
+func Custom(layout [][]int) Graph {
+	g := make([]node, len(layout))
+	for i := range g {
+		peers := make([]*node, len(layout[i]))
+		for j := range layout[i] {
+			peers[j] = &g[j]
+		}
+		g[i].peers = peers
 	}
+
+	return g
 }
 
-// Value returns the genome underlying the node.
-func (n *node) Value() (val evo.Genome) {
-	if n.running {
-		val = <-n.valc
-	} else {
-		val = n.val
-	}
-	return val
-}
-
-// SetDelay sets a delay between each evolution.
-func (n *node) SetDelay(d time.Duration) {
-	if n.running {
-		n.delayc <- d
-	} else {
-		n.delay = d
-	}
-}
-
-// Graphs
-// -------------------------
-
-type graph struct {
-	nodes []node
-}
-
-func (g *graph) Start() {
-	for i := range g.nodes {
-		g.nodes[i].Start()
-	}
-}
-
-func (g *graph) Close() {
-	for i := range g.nodes {
-		g.nodes[i].Close()
-	}
-}
-
-func (g *graph) Iter() evo.Iterator {
-	return iterate(g)
-}
-
-func (g *graph) Stats() (s evo.Stats) {
-	for i := g.Iter(); i.Value() != nil; i.Next() {
-		s = s.Put(i.Value().Fitness())
+// Stats returns statistics on the fitness of genomes in the population.
+func (g Graph) Stats() (s evo.Stats) {
+	for i := range g {
+		s = s.Put(g[i].get().Fitness())
 	}
 	return s
 }
 
-func (g *graph) Fitness() float64 {
+// Fitness returns the maximum fitness within the population.
+func (g Graph) Fitness() float64 {
 	return g.Stats().Max()
 }
 
-func (g *graph) Evolve(suiters ...evo.Genome) evo.Genome {
-	h := suiters[rand.Intn(len(suiters))].(*graph)
-	i := rand.Intn(len(g.nodes))
-	j := rand.Intn(len(h.nodes))
-	x := g.nodes[i].Value()
-	y := h.nodes[j].Value()
-	g.nodes[i].valc <- y
-	h.nodes[j].valc <- x
-	return g
-}
-
-func (g *graph) SetDelay(d time.Duration) {
-	for i := range g.nodes {
-		g.nodes[i].SetDelay(d)
+// Evolve starts the optimization in a separate goroutine.
+func (g Graph) Evolve(members []evo.Genome, body evo.EvolveFn) {
+	for i := range g {
+		g[i].val = &members[i]
+		g[i].evolve(body)
 	}
 }
 
-// Iterator
-// -------------------------
-
-type iter struct {
-	sub evo.Iterator
-	idx int
-	g   *graph
-	val evo.Genome
+func (n *node) evolve(body evo.EvolveFn) {
+	n.getc = make(chan chan evo.Genome)
+	n.setc = make(chan chan evo.Genome)
+	n.closec = make(chan chan struct{})
+	go n.run(body)
 }
 
-func iterate(g *graph) evo.Iterator {
-	var it iter
-	it.idx = 0
-	it.g = g
-	it.val = g.nodes[it.idx].Value()
-	if pop, ok := it.val.(evo.Population); ok {
-		it.sub = pop.Iter()
+// Stop terminates the optimization.
+func (g Graph) Stop() {
+	for i := range g {
+		g[i].stop()
 	}
-	return &it
 }
 
-func (it *iter) Value() evo.Genome {
-	if it.sub != nil {
-		return it.sub.Value()
+func (n *node) stop() {
+	ch := make(chan struct{})
+	n.closec <- ch
+	<-ch
+	close(n.getc)
+	close(n.setc)
+	close(n.closec)
+}
+
+// get returns the genome underlying the node.
+func (n *node) get() evo.Genome {
+	getter := <-n.getc
+	if getter == nil {
+		return *n.val
 	}
-	return it.val
+	return <-getter
 }
 
-func (it *iter) Next() {
-	switch {
-	case it.sub != nil:
-		it.sub.Next()
-		if it.sub.Value() != nil {
-			break
-		}
-		it.sub = nil
-		fallthrough
-	default:
-		it.idx++
-		if it.idx >= len(it.g.nodes) {
-			it.g = nil
-			it.val = nil
-		} else {
-			it.val = it.g.nodes[it.idx].Value()
-			if pop, ok := it.val.(evo.Population); ok {
-				it.sub = pop.Iter()
+// The main goroutine.
+func (n *node) run(body evo.EvolveFn) {
+	var (
+		// drives the main loop
+		loop = make(chan struct{}, 1)
+
+		// used to access/mutate the value
+		getter = make(chan evo.Genome)
+		setter = make(chan evo.Genome)
+	)
+
+	loop <- struct{}{}
+
+	for {
+		select {
+		case <-loop:
+			go func() {
+				suiters := make([]evo.Genome, len(n.peers))
+				for i := range n.peers {
+					suiters[i] = n.peers[i].get()
+				}
+				setter <- body(*n.val, suiters)
+				loop <- struct{}{}
+			}()
+
+		case n.getc <- getter:
+			getter <- *n.val
+
+		case *n.val = <-setter:
+
+		case ch := <-n.closec:
+			if subpop, ok := (*n.val).(evo.Population); ok {
+				subpop.Stop()
 			}
+			ch <- struct{}{}
+			return
 		}
 	}
-}
-
-// Functions
-// -------------------------
-
-// New creates a new graph population. No particular layout is guarenteed.
-func New(values []evo.Genome) *graph {
-	return Hypercube(values)
-}
-
-// Grid creates a new graph population arranged as a 2D grid.
-func Grid(values []evo.Genome) *graph {
-	width := len(values) << 1
-	layout := make([][]int, len(values))
-	for i := range layout {
-		layout[i] = make([]int, 4)
-		layout[i][0] = (i + 1 + len(values)) % len(values)
-		layout[i][1] = (i - 1 + len(values)) % len(values)
-		layout[i][2] = (i + width + len(values)) % len(values)
-		layout[i][3] = (i - width + len(values)) % len(values)
-	}
-	return Custom(layout, values)
-}
-
-// Hypercube creates a new graph population arranged as a hypercube.
-func Hypercube(values []evo.Genome) *graph {
-	var dimension uint
-	for dimension = 0; len(values) > (1 << dimension); dimension++ {
-	}
-	layout := make([][]int, len(values))
-	for i := range values {
-		layout[i] = make([]int, dimension)
-		for j := range layout[i] {
-			layout[i][j] = (i ^ (1 << uint(j))) % len(values)
-		}
-	}
-	return Custom(layout, values)
-}
-
-// Ring creates a new graph population arranged as a ring.
-func Ring(values []evo.Genome) *graph {
-	layout := make([][]int, len(values))
-	for i := range values {
-		layout[i] = make([]int, 2)
-		layout[i][0] = (i - 1 + len(values)) % len(values)
-		layout[i][0] = (i + 1) % len(values)
-	}
-	return Custom(layout, values)
-}
-
-// Custom creates a new graph population with a custom layout.
-// The layout is specified as an adjacency list in terms of position, e.g. if
-// layout[0] == [1,2,3] then the 0th node will have three peers, namely the
-// 1st, 2nd, and 3rd nodes.
-func Custom(layout [][]int, values []evo.Genome) *graph {
-	g := new(graph)
-	g.nodes = make([]node, len(values))
-	for i := range g.nodes {
-		val := values[i]
-		peers := make([]*node, len(layout[i]))
-		for j := range layout[i] {
-			peers[j] = &g.nodes[j]
-		}
-		g.nodes[i].val = val
-		g.nodes[i].peers = peers
-	}
-
-	return g
 }
