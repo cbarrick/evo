@@ -17,7 +17,6 @@ import (
 const (
 	dim  = len(cities) // the dimension of the problem
 	size = 256         // the size of the population
-	stop = 2e6         // terminate after this number of fitness evalutations
 )
 
 // Global objects
@@ -163,26 +162,8 @@ func TestTSP(t *testing.T) {
 	pop = graph.Hypercube(size)
 	pop.Evolve(seed, Evolve)
 
-	// Tear-down:
-	// Upon returning, we cleanup our resources and print the solution.
-	defer func() {
-		pop.Stop()
-		best := seed[0]
-		bestFit := seed[0].Fitness()
-		for i := range seed {
-			fit := seed[i].Fitness()
-			if fit > bestFit {
-				best = seed[i]
-				bestFit = fit
-			}
-		}
-		fmt.Println("\nTour:", best)
-	}()
-
-	// Run:
-	// We continuously poll the population for statistics used in the
-	// termination conditions.
-	for {
+	// Continuously print statistics while the optimization runs.
+	pop.Poll(0, func() bool {
 		count.Lock()
 		n := count.n
 		count.Unlock()
@@ -197,17 +178,34 @@ func TestTSP(t *testing.T) {
 			-stats.Max(),
 			-stats.RSD())
 
-		// Stop when we get close. Finding the true minimum could take a while.
-		if -stats.Max() < best*1.1 {
-			return
-		}
+		return false
+	})
 
-		// Force stop after some number fitness evaluations
-		if n > stop {
-			t.Fail()
-			return
+	// Stop when we get close. Finding the true minimum could take a while.
+	pop.Poll(0, func() bool {
+		stats := pop.Stats()
+		return -stats.Max() < best*1.1
+	})
+
+	// Terminate after 2,000,000 fitness evaluations.
+	pop.Poll(0, func() bool {
+		count.Lock()
+		n := count.n
+		count.Unlock()
+		return n > 2e6
+	})
+
+	pop.Wait()
+	best := seed[0]
+	bestFit := seed[0].Fitness()
+	for i := range seed {
+		fit := seed[i].Fitness()
+		if fit > bestFit {
+			best = seed[i]
+			bestFit = fit
 		}
 	}
+	fmt.Println("\nTour:", best)
 }
 
 // Best is the minimum tour of the cities.

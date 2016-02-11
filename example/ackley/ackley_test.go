@@ -133,27 +133,8 @@ func TestAckley(t *testing.T) {
 	var pop gen.Population
 	pop.Evolve(seed, Evolve)
 
-	// Tear-down:
-	// Upon returning, we cleanup our resources and print the solution.
-	defer func() {
-		pop.Stop()
-		selector.Close()
-		best := seed[0]
-		bestFit := seed[0].Fitness()
-		for i := range seed {
-			fit := seed[i].Fitness()
-			if fit > bestFit {
-				best = seed[i]
-				bestFit = fit
-			}
-		}
-		fmt.Println("\nSolution:", best)
-	}()
-
-	// Run:
-	// We continuously poll the population for statistics and terminate when we
-	// have a solution or after 200,000 evaluations.
-	for {
+	// Continuously print statistics while the optimization runs.
+	pop.Poll(0, func() bool {
 		count.Lock()
 		n := count.n
 		count.Unlock()
@@ -166,16 +147,35 @@ func TestAckley(t *testing.T) {
 			-stats.Min(),
 			-stats.Mean(),
 			-stats.Max(),
-			stats.RSD())
+			-stats.RSD())
 
-		// We've converged once the deviation is within the precision
-		if stats.SD() < precision {
-			return
-		}
+		return false
+	})
 
-		// Force stop after 200,000 fitness evaluations
-		if n > 200000 {
-			return
+	// Terminate after 200,000 fitness evaluations.
+	pop.Poll(0, func() bool {
+		count.Lock()
+		n := count.n
+		count.Unlock()
+		return n > 200000
+	})
+
+	// Terminate if the standard deviation is low.
+	pop.Poll(0, func() bool {
+		stats := pop.Stats()
+		return stats.SD() < precision
+	})
+
+	pop.Wait()
+	selector.Close()
+	best := seed[0]
+	bestFit := seed[0].Fitness()
+	for i := range seed {
+		fit := seed[i].Fitness()
+		if fit > bestFit {
+			best = seed[i]
+			bestFit = fit
 		}
 	}
+	fmt.Println("\nSolution:", best)
 }
