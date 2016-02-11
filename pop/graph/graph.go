@@ -6,7 +6,11 @@
 // regular population, it is known as the diffusion model.
 package graph
 
-import "github.com/cbarrick/evo"
+import (
+	"time"
+
+	"github.com/cbarrick/evo"
+)
 
 type Graph []node
 
@@ -16,6 +20,7 @@ type node struct {
 	getc   chan chan evo.Genome
 	setc   chan chan evo.Genome
 	closec chan chan struct{}
+	done   chan struct{}
 }
 
 // Grid creates a new graph population arranged as a 2D grid.
@@ -115,7 +120,32 @@ func (n *node) stop() {
 	<-ch
 	close(n.getc)
 	close(n.setc)
-	close(n.closec)
+}
+
+// Poll executes a function at some frequency for the duration of the
+// current optimization. If the function returns true, the current optimization
+// is halted.
+func (g Graph) Poll(freq time.Duration, cond evo.ConditionFn) {
+	done := g[0].closec
+	go func() {
+		for {
+			select {
+			case <-time.After(freq):
+				if cond() {
+					g.Stop()
+					return
+				}
+			case ch := <-done:
+				done <- ch
+				return
+			}
+		}
+	}()
+}
+
+// Wait blocks until the evolution terminates.
+func (g Graph) Wait() {
+	g[0].closec <- <-g[0].closec
 }
 
 // get returns the genome underlying the node.
@@ -162,6 +192,8 @@ func (n *node) run(body evo.EvolveFn) {
 				subpop.Stop()
 			}
 			ch <- struct{}{}
+			n.closec <- ch
+
 			return
 		}
 	}

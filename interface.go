@@ -1,5 +1,10 @@
 package evo
 
+import "time"
+
+// A ConditionFn describes a termination condition.
+type ConditionFn func() bool
+
 // An EvolveFn describes an iteration of the evolution loop. The evolve function
 // is called once for each member of the population, possibly in parrallel, and
 // is responsible for producing new Genomes given some subset of the population,
@@ -34,6 +39,14 @@ type Population interface {
 
 	// Stop terminates the optimization.
 	Stop()
+
+	// Poll executes a function at some frequency for the duration of the
+	// current optimization. If the function returns true, the current
+	// optimization is halted. Use a frequency of 0 for continuous polling.
+	Poll(freq time.Duration, cond ConditionFn)
+
+	// Wait blocks until the evolution terminates.
+	Wait()
 
 	// Stats returns various statistics about the population.
 	Stats() Stats

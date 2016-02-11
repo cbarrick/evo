@@ -122,25 +122,8 @@ func TestQueens(t *testing.T) {
 	pop := graph.Ring(isl)
 	pop.Evolve(islands, gen.Migrate(migration, delay))
 
-	// Teardown:
-	defer func() {
-		pop.Stop()
-		best := seed[0]
-		bestFit := seed[0].Fitness()
-		for i := range seed {
-			fit := seed[i].Fitness()
-			if fit > bestFit {
-				best = seed[i]
-				bestFit = fit
-			}
-		}
-		fmt.Println("\nSolution:", best)
-	}()
-
-	// Termination:
-	// We continuously poll the population for statistics to check various
-	// termination conditions.
-	for {
+	// Continuously print statistics while the optimization runs.
+	pop.Poll(0, func() bool {
 		count.Lock()
 		n := count.n
 		count.Unlock()
@@ -156,19 +139,38 @@ func TestQueens(t *testing.T) {
 			-stats.Max(),
 			-stats.RSD())
 
-		// We've found the solution when max is 0
-		if stats.Max() == 0 {
-			return
-		}
+		return false
+	})
 
-		// We've converged once the deviation is less than 0.01
-		if stats.SD() < 1e-2 {
-			return
-		}
+	// Terminate when we've found the solution (when max is 0)
+	pop.Poll(0, func() bool {
+		stats := pop.Stats()
+		return stats.Max() == 0
+	})
 
-		// Force stop after 2,000,000 fitness evaluations
-		if n > 2e6 {
-			return
+	// Terminate if We've converged to a deviation is less than 0.01
+	pop.Poll(0, func() bool {
+		stats := pop.Stats()
+		return stats.SD() < 1e-2
+	})
+
+	// Terminate after 2,000,000 fitness evaluations.
+	pop.Poll(0, func() bool {
+		count.Lock()
+		n := count.n
+		count.Unlock()
+		return n > 2e6
+	})
+
+	pop.Wait()
+	best := seed[0]
+	bestFit := seed[0].Fitness()
+	for i := range seed {
+		fit := seed[i].Fitness()
+		if fit > bestFit {
+			best = seed[i]
+			bestFit = fit
 		}
 	}
+	fmt.Println("\nSolution:", best)
 }

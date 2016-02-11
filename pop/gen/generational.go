@@ -31,7 +31,7 @@ func (pop *Population) Evolve(members []evo.Genome, body evo.EvolveFn) {
 	pop.setc = make(chan chan int)
 	pop.getc = make(chan chan int)
 	pop.valuec = make(chan evo.Genome)
-	pop.stopc = make(chan chan struct{})
+	pop.stopc = make(chan chan struct{}, 1)
 	go run(*pop, body)
 }
 
@@ -44,7 +44,32 @@ func (pop *Population) Stop() {
 	close(pop.setc)
 	close(pop.getc)
 	close(pop.valuec)
-	close(pop.stopc)
+}
+
+// Poll executes a function at some frequency for the duration of the
+// current optimization. If the function returns true, the current optimization
+// is halted.
+func (pop *Population) Poll(freq time.Duration, cond evo.ConditionFn) {
+	done := pop.stopc
+	go func() {
+		for {
+			select {
+			case <-time.After(freq):
+				if cond() {
+					pop.Stop()
+					return
+				}
+			case ch := <-done:
+				done <- ch
+				return
+			}
+		}
+	}()
+}
+
+// Wait blocks until the evolution terminates.
+func (pop *Population) Wait() {
+	pop.stopc <- <-pop.stopc
 }
 
 // Stats returns statistics on the fitness of genomes in the population.
@@ -195,6 +220,7 @@ func run(pop Population, body evo.EvolveFn) {
 				}
 			}
 			ch <- struct{}{}
+			pop.stopc <- ch
 			return
 		}
 	}

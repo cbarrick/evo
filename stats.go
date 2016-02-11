@@ -12,7 +12,7 @@ type Stats struct {
 	max, min float64
 	mean     float64
 	sumsq    float64 // sum of squares of deviation from the mean
-	count      float64
+	count    float64
 }
 
 // Put inserts a new value into the data.
