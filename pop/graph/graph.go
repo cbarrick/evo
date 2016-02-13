@@ -75,7 +75,6 @@ func Custom(layout [][]int) Graph {
 		}
 		g[i].peers = peers
 	}
-
 	return g
 }
 
@@ -101,7 +100,6 @@ func (g Graph) Evolve(members []evo.Genome, body evo.EvolveFn) {
 		g[i].closec = make(chan chan struct{}, 1)
 	}
 	for i := range g {
-		i := i
 		go g[i].run(body)
 	}
 }
@@ -145,12 +143,12 @@ func (g Graph) Wait() {
 	}
 }
 
-func (n *node) wait() {
+func (n node) wait() {
 	n.closec <- <-n.closec
 }
 
 // get returns the genome underlying the node.
-func (n *node) get() evo.Genome {
+func (n node) get() evo.Genome {
 	getter := <-n.getc
 	if getter == nil {
 		return *n.val
@@ -159,7 +157,7 @@ func (n *node) get() evo.Genome {
 }
 
 // The main goroutine.
-func (n *node) run(body evo.EvolveFn) {
+func (n node) run(body evo.EvolveFn) {
 	var (
 		// drives the main loop
 		loop = make(chan struct{}, 1)
@@ -194,7 +192,6 @@ func (n *node) run(body evo.EvolveFn) {
 			}
 			ch <- struct{}{}
 			n.closec <- ch
-
 			return
 		}
 	}
