@@ -96,30 +96,25 @@ func (g Graph) Fitness() float64 {
 func (g Graph) Evolve(members []evo.Genome, body evo.EvolveFn) {
 	for i := range g {
 		g[i].val = &members[i]
-		g[i].evolve(body)
+		g[i].getc = make(chan chan evo.Genome)
+		g[i].setc = make(chan chan evo.Genome)
+		g[i].closec = make(chan chan struct{}, 1)
 	}
-}
-
-func (n *node) evolve(body evo.EvolveFn) {
-	n.getc = make(chan chan evo.Genome)
-	n.setc = make(chan chan evo.Genome)
-	n.closec = make(chan chan struct{}, 1)
-	go n.run(body)
+	for i := range g {
+		i := i
+		go g[i].run(body)
+	}
 }
 
 // Stop terminates the optimization.
 func (g Graph) Stop() {
-	for i := range g {
-		g[i].stop()
-	}
-}
-
-func (n *node) stop() {
 	ch := make(chan struct{})
-	n.closec <- ch
-	<-ch
-	close(n.getc)
-	close(n.setc)
+	for i := range g {
+		g[i].closec <- ch
+		<-ch
+		close(g[i].getc)
+		close(g[i].setc)
+	}
 }
 
 // Poll executes a function at some frequency for the duration of the
