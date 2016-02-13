@@ -103,7 +103,7 @@ func (g Graph) Evolve(members []evo.Genome, body evo.EvolveFn) {
 func (n *node) evolve(body evo.EvolveFn) {
 	n.getc = make(chan chan evo.Genome)
 	n.setc = make(chan chan evo.Genome)
-	n.closec = make(chan chan struct{})
+	n.closec = make(chan chan struct{}, 1)
 	go n.run(body)
 }
 
@@ -145,7 +145,13 @@ func (g Graph) Poll(freq time.Duration, cond evo.ConditionFn) {
 
 // Wait blocks until the evolution terminates.
 func (g Graph) Wait() {
-	g[0].closec <- <-g[0].closec
+	for i := range g {
+		g[i].wait()
+	}
+}
+
+func (n *node) wait() {
+	n.closec <- <-n.closec
 }
 
 // get returns the genome underlying the node.
